@@ -163,6 +163,23 @@ class Lite3AMP(BaseTask):
 
         self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
 
+        self.feet_pos[:] = self.rigid_body_state[:, self.feet_indices, 0:3]
+        self.feet_pos[:, :, :2] /= self.cfg.terrain.horizontal_scale
+        self.feet_pos[:, :, :2] += self.cfg.terrain.border_size / self.cfg.terrain.horizontal_scale
+        if self.cfg.terrain.mesh_type == 'trimesh' and self.cfg.env.num_privileged_obs is not None:
+            self.feet_pos[:, :, 0] = torch.clip(self.feet_pos[:, :, 0], min=0., max=self.height_samples.shape[0] - 2.)
+            self.feet_pos[:, :, 1] = torch.clip(self.feet_pos[:, :, 1], min=0., max=self.height_samples.shape[1] - 2.)
+
+            if self.cfg.terrain.dummy_normal is False:
+                self.contact_normal[:] = get_contact_normals(self.feet_pos, self.mesh_normals, self.sensor_forces)
+
+        # self.cpg_phase_information = self.pmtg.update_observation()
+
+        # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
+        self.contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        self.contact_filt = torch.logical_or(self.contact, self.last_contacts)
+        self.last_contacts = self.contact
+
         self._post_physics_step_callback()
 
         # compute observations, rewards, resets, ...
@@ -298,17 +315,17 @@ class Lite3AMP(BaseTask):
     def compute_privileged_observations(self):
         """ Computes privileged observations
         """
-        #contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
-        # # contact_states = torch.norm(self.sensor_forces[:, :, :2], dim=2) > 1. # todo
-        # # contact_forces = self.sensor_forces.flatten(1)
-        # # contact_normals = self.contact_normal
+        contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
+        #print(contact_states)
+        # contact_states = torch.norm(self.sensor_forces[:, :, :2], dim=2) > 1. # todo
+        # contact_forces = self.sensor_forces.flatten(1)
+        # contact_normals = self.contact_normal
         if self.friction_coeffs is not None:
-            friction_coefficients = self.friction_coeffs.repeat(1, 4).to(self.device)
+            friction_coefficients = self.friction_coeffs.squeeze(-1).repeat(1, 4).to(self.device)
         else:
-            friction_coefficients = torch.tensor(self.cfg.terrain.static_friction).repeat(self.num_envs, 4).to(
-                self.device)
-        #
-        # # thigh_and_shank_contact = torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1
+            friction_coefficients = torch.tensor(self.cfg.terrain.static_friction).repeat(self.num_envs, 4).to(self.device)
+
+        # thigh_and_shank_contact = torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1
         external_forces_and_torques = torch.cat((self.push_forces[:, 0, :], self.push_torques[:, 0, :]), dim=-1)
         # # airtime = self.feet_air_time
         # # self.privileged_obs_buf = torch.cat(
@@ -325,8 +342,8 @@ class Lite3AMP(BaseTask):
             self.heights.squeeze(-1),
             self.base_lin_vel * self.obs_scales.lin_vel,
             #self.base_ang_vel * self.obs_scales.ang_vel,
-             # contact_states * self.priv_obs_scales.contact_state,
-             #friction_coefficients * self.priv_obs_scales.friction,
+             contact_states * self.priv_obs_scales.contact_state,
+             friction_coefficients * self.priv_obs_scales.friction,
              #external_forces_and_torques * self.priv_obs_scales.external_wrench,
 
              (self.mass_payloads - 6) * self.priv_obs_scales.mass_payload,  # payload, 1
@@ -383,6 +400,20 @@ class Lite3AMP(BaseTask):
         Returns:
             [List[gymapi.RigidShapeProperties]]: Modified rigid shape properties
         """
+        for s in range(len(props)):
+            props[s].friction = self.cfg.terrain.static_friction
+            random_foot_restitution = self.cfg.asset.restitution_mean + torch_rand_float(
+                self.cfg.asset.restitution_offset_range[0],
+                self.cfg.asset.restitution_offset_range[1], (1, 1),
+                device=self.device)
+            if 'lite' in self.task_name:
+                feet_list = [3, 7, 11, 15]
+            else:
+                raise Exception("")
+            if s in feet_list:
+                props[s].restitution = random_foot_restitution
+                props[s].compliance = self.cfg.asset.compliance
+
         if self.cfg.domain_rand.randomize_friction:
             if env_id==0:
                 # prepare friction randomization
@@ -688,9 +719,13 @@ class Lite3AMP(BaseTask):
         actor_root_state = self.gym.acquire_actor_root_state_tensor(self.sim)
         dof_state_tensor = self.gym.acquire_dof_state_tensor(self.sim)
         net_contact_forces = self.gym.acquire_net_contact_force_tensor(self.sim)
+        rigid_body_state = self.gym.acquire_rigid_body_state_tensor(self.sim)
+        sensor_tensor = self.gym.acquire_force_sensor_tensor(self.sim)
         self.gym.refresh_dof_state_tensor(self.sim)
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
+        self.gym.refresh_rigid_body_state_tensor(self.sim)
+        self.gym.refresh_force_sensor_tensor(self.sim)
 
         # create some wrapper tensors for different slices
         self.root_states = gymtorch.wrap_tensor(actor_root_state)
@@ -702,11 +737,16 @@ class Lite3AMP(BaseTask):
         self.old_rpy = self.rpy.clone()
         self.old_pos = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device, requires_grad=False)
         self.old_pos[:] = self.root_states[:, :3]
-        #self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1,3)  # shape: num_envs, num_bodies, xyz axis
-        #self.rigid_body_state = gymtorch.wrap_tensor(rigid_body_state).view(self.num_envs, -1, 13)
+        self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1,3)  # shape: num_envs, num_bodies, xyz axis
+        self.rigid_body_state = gymtorch.wrap_tensor(rigid_body_state).view(self.num_envs, -1, 13)
         # print(self.rigid_body_state.shape)  # 4*5 + 1
         # print(self.feet_indices)
         # print("num_envs = ", self.num_envs)
+
+        self.feet_pos = self.rigid_body_state[:, self.feet_indices, 0:3]
+        # self.hip_pos = self.rigid_body_state[:, self.feet_indices-3, 0:3]
+
+        self.sensor_forces = gymtorch.wrap_tensor(sensor_tensor).view(self.num_envs, 4, 6)[..., :3]
 
         self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3) # shape: num_envs, num_bodies, xyz axis
 
@@ -727,6 +767,8 @@ class Lite3AMP(BaseTask):
         self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+        self.contact = torch.zeros_like(self.last_contacts)
+        self.contact_filt = torch.zeros_like(self.last_contacts)
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.world_lin_vel = self.root_states[:, 7:10]
         self.world_lin_acc = torch.zeros_like(self.world_lin_vel)
@@ -741,7 +783,7 @@ class Lite3AMP(BaseTask):
                                        dtype=torch.float,
                                        requires_grad=False)
         self.measured_heights = 0
-        self.friction_coeffs = None
+        #self.friction_coeffs = None
         self.push_forces = torch.zeros((self.num_envs, self.num_bodies, 3),
                                        device=self.device,
                                        dtype=torch.float,
@@ -942,6 +984,16 @@ class Lite3AMP(BaseTask):
         env_upper = gymapi.Vec3(0., 0., 0.)
         self.actor_handles = []
         self.envs = []
+
+        sensor_pose = gymapi.Transform()
+        for name in feet_names:
+            sensor_options = gymapi.ForceSensorProperties()
+            sensor_options.enable_forward_dynamics_forces = False  # for example gravity
+            sensor_options.enable_constraint_solver_forces = True  # for example contacts
+            sensor_options.use_world_frame = True  # report forces in world frame (easier to get vertical components)
+            index = self.gym.find_asset_rigid_body_index(robot_asset, name)
+            self.gym.create_asset_force_sensor(robot_asset, index, sensor_pose, sensor_options)
+
         self.total_mass = torch.zeros((self.num_envs), dtype=torch.float, device=self.device)
         for i in range(self.num_envs):
             # create env instance

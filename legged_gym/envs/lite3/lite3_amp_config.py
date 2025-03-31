@@ -31,14 +31,14 @@ import glob
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
-MOTION_FILES = glob.glob('/home/ehr/wxy/legged_gym/datasets/mocap_motions_lite3/*')
+MOTION_FILES = glob.glob('/home/ehr/wxy/legged_gym_wxy/datasets/mocap_motions_lite3/*')
 
 
 class Lite3AMPCfg( LeggedRobotCfg ):
 
     class env(LeggedRobotCfg.env):
         num_observations = 45#235-187
-        num_privileged_obs = 187+36+3+1+3  # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        num_privileged_obs = 187+36+3+1+3+4+4  # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
         num_envs = 4096
         reference_state_initialization = False
