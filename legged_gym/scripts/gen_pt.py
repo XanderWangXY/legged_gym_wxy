@@ -55,12 +55,12 @@ class PolicyExporter(torch.nn.Module):
 #         return loaded_dict['infos']
 
 if __name__ == '__main__':
-    path = '/home/ehr/wxy/legged_gym/logs/lite3_amp/Mar28_09-15-51_student_amp/'
-    model_name = 'model_3500.pt'
+    path = '/home/ehr/wxy/legged_gym/logs/rough_lite3/Mar31_13-43-27_student_cnn50/'
+    model_name = 'model_8000.pt'
     loaded_dict = torch.load(path + model_name, map_location='cpu')
     actor_critic = ActorCritic(45, # env.num_obs,
                                45,  # env.num_previleged_obs,
-                               20*45,  # env.num_obs_history,
+                               50*45,  # env.num_obs_history,
                                12,  
                                init_noise_std = 1.0, # check the correctness with that in config file!!
                                actor_hidden_dims = [512, 256, 128], 

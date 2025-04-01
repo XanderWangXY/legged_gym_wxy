@@ -33,7 +33,7 @@ from time import time
 from warnings import WarningMessage
 import numpy as np
 import os
-
+import re
 from isaacgym.torch_utils import *
 from isaacgym import gymtorch, gymapi, gymutil
 from legged_gym.utils.isaacgym_utils import compute_meshes_normals, Point, get_euler_xyz, get_contact_normals
@@ -483,7 +483,7 @@ class LeggedRobot(BaseTask):
         else:
             self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-        # fixed_commands = [0.4, 0.0, 0.0]
+        # fixed_commands = [-0.6, 0.0, 0.0]
         # self.commands[env_ids, 0] = torch.tensor([fixed_commands[0]]).repeat(len(env_ids)).to(device=self.device)
         # self.commands[env_ids, 1] = torch.tensor([fixed_commands[1]]).repeat(len(env_ids)).to(device=self.device)
         # self.commands[env_ids, 2] = torch.tensor([fixed_commands[2]]).repeat(len(env_ids)).to(device=self.device)
@@ -655,6 +655,8 @@ class LeggedRobot(BaseTask):
         self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
         self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
         self.base_quat = self.root_states[:, 3:7]
+        self.rigid_body_states = gymtorch.wrap_tensor(rigid_body_state)
+        self.rigid_body_pos = self.rigid_body_states.view(self.num_envs, self.num_bodies, 13)[..., 0:3]
         self.rpy = get_euler_xyz(self.base_quat)  # xyzw
         self.old_rpy = self.rpy.clone()
         self.old_pos = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device, requires_grad=False)
@@ -854,6 +856,7 @@ class LeggedRobot(BaseTask):
 
         # save body names from the asset
         body_names = self.gym.get_asset_rigid_body_names(robot_asset)
+        self.rigid_body_names = body_names
         self.dof_names = self.gym.get_asset_dof_names(robot_asset)
         self.num_bodies = len(body_names)
         self.num_dofs = len(self.dof_names)
@@ -1125,3 +1128,83 @@ class LeggedRobot(BaseTask):
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+
+    def _reward_handstand_feet_height_exp(self):
+        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
+        # print(feet_indices)
+        # print("Rigid body pos shape:", self.rigid_body_pos.shape)
+        feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
+        # feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
+        foot_pos = self.rigid_body_pos[:, feet_indices_tensor, :]
+        feet_height = foot_pos[..., 2]
+        # print(feet_height)
+        target_height = self.cfg.params.handstand_feet_height_exp["target_height"]
+        std = self.cfg.params.handstand_feet_height_exp["std"]
+        feet_height_error = torch.sum((feet_height - target_height) ** 2, dim=1)
+        # print(torch.exp(-feet_height_error / (std**2)))
+        return torch.exp(-feet_height_error / (std**2))
+        # return 0
+
+
+
+    def _reward_handstand_feet_on_air(self):
+        """
+        脚部在空奖励：
+        1. 使用 self.contact_forces 判断足部是否接触地面（通过预先设置的阈值）。
+        2. 如果所有足部都没有接触地面，则奖励1，否则奖励为0（或取平均）。
+        """
+        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
+        # print(feet_indices)
+        feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
+        # contact_forces: shape = (num_envs, num_bodies, 3)
+        contact = torch.norm(self.contact_forces[:, feet_indices_tensor, :], dim=-1) > 1.0
+        # 如果所有足部均未接触地面，reward = 1；也可以使用 mean 得到部分奖励
+        reward = (~contact).float().prod(dim=1)
+        # print(reward)
+        return reward
+        # return 0
+
+
+    def _reward_handstand_feet_air_time(self):
+        """
+        计算手倒立时足部空中时间奖励
+        """
+        threshold = self.cfg.params.handstand_feet_air_time["threshold"]
+
+        # 获取 "R.*_foot" 索引
+        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
+        feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.device)
+
+        # 计算当前接触状态
+        contact = self.contact_forces[:, feet_indices_tensor, 2] > 1.0  # (batch_size, num_feet)
+        if not hasattr(self,"last_contacts") or self.last_contacts.shape != contact.shape:
+            self.last_contacts = torch.zeros_like(contact,dtype=torch.bool,device=contact.device)
+
+        if not hasattr(self,"feet_air_time") or self.feet_air_time.shape != contact.shape:
+            self.feet_air_time = torch.zeros_like(contact,dtype=torch.float,device=contact.device)
+        contact_filt = torch.logical_or(contact,self.last_contacts)
+        self.last_contacts=contact
+        first_contact = (self.feet_air_time > 0.0) * contact_filt
+        self.feet_air_time+=self.dt
+        rew_airTime = torch.sum((self.feet_air_time - threshold) * first_contact,dim=1)
+        # rew_airTime*=torch.norm(self.commands[:,:2],dim =1)>0.1
+        self.feet_air_time *= ~contact_filt
+
+        #print(rew_airTime)
+        return rew_airTime
+
+
+
+    def _reward_handstand_orientation_l2(self):
+        """
+        姿态奖励：
+        1. 使用 self.projected_gravity（机器人基座坐标系下的重力投影）来评估姿态。
+        2. 目标重力方向通过配置传入（例如 [1, 0, 0] 表示目标为竖直向上）。
+        3. 对比当前和目标重力方向的 L2 距离，偏差越大惩罚越大。
+        """
+        target_gravity = torch.tensor(
+            self.cfg.params.handstand_orientation_l2["target_gravity"],
+            device=self.device
+        )
+
+        return torch.sum((self.projected_gravity - target_gravity) ** 2, dim=1)

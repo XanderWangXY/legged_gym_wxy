@@ -36,6 +36,8 @@ Paper: https://arxiv.org/abs/2109.11978
 5. Install legged_gym
     - Clone this repository
    - `cd legged_gym && pip install -e .`
+6. others
+    - `pip install wandb gym pybullet`
 
 ### CODE STRUCTURE ###
 1. Each environment is defined by an env file (`legged_robot.py`) and a config file (`legged_robot_config.py`). The config file contains two classes: one containing  all the environment parameters (`LeggedRobotCfg`) and one for the training parameters (`LeggedRobotCfgPPo`).  
