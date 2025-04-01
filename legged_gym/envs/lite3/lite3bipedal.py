@@ -884,8 +884,7 @@ class Lite3Bipedal(BaseTask):
         # According to swing or stance leg, use different lag timesteps, and update valid_history_length
         self.lag_buffer = torch.cat([self.lag_buffer[:, :, 1:], updated_actions.unsqueeze(dim=-1).clone()], dim=-1)
         terrain_at_foot_height = self._get_heights_at_points(self.foot_positions[:, :, :2])
-        is_swing = torch.tile((self.foot_positions[:, :, 2] > terrain_at_foot_height + 0.019).unsqueeze(dim=-1),
-                              (1, 1, 3)).reshape((self.num_envs, self.num_dof))
+        is_swing = torch.tile((self.foot_positions[:, :, 2] > terrain_at_foot_height + 0.019).unsqueeze(dim=-1), (1, 1, 3)).reshape((self.num_envs, self.num_dof))
         dynamic_factor = torch.ones_like(self.dof_pos)
         if self.cfg.domain_rand.use_dynamic_kp_scale:
             dynamic_factor[is_swing] = 0.85
@@ -898,45 +897,37 @@ class Lite3Bipedal(BaseTask):
             low=self.cfg.domain_rand.swing_lag_timesteps[0],
             high=self.cfg.domain_rand.swing_lag_timesteps[1] + 1,
             size=self.lag_steps[is_swing].shape
-        )).to(self.device)  # large delay when swing
-        cur_lag_steps = torch.minimum(self.valid_history_length,
-                                      self.lag_steps)  # min: 0, no delay; max: cfg.lag_timesteps
+        )).to(self.device) # large delay when swing
+        cur_lag_steps = torch.minimum(self.valid_history_length, self.lag_steps) # min: 0, no delay; max: cfg.lag_timesteps
         # index: out[i][j] = input[i][j][index[i][j]]
-        used_actions = torch.gather(self.lag_buffer, 2,
-                                    (self.cfg.domain_rand.lag_timesteps - cur_lag_steps).unsqueeze(2)).squeeze(-1)
+        used_actions = torch.gather(self.lag_buffer, 2, (self.cfg.domain_rand.lag_timesteps - cur_lag_steps).unsqueeze(2)).squeeze(-1)
         self.valid_history_length = torch.clamp(cur_lag_steps + 1, max=self.cfg.domain_rand.lag_timesteps)
 
         # self.lagged_actions[:] = updated_actions[:]
-        # pd controller
+        #pd controller
         actions_scaled = used_actions * self.cfg.control.action_scale
         actions_scaled[:, [0, 3, 6, 9]] *= self.cfg.control.hip_reduction_scale
         # TODO: simulate delay of control thread. Maintain old actions, update with new actions with some probablity
         control_type = self.cfg.control.control_type
-        if control_type == "P":
+        if control_type=="P":
             if self.cfg.control.action_mode == "bias":
                 motor_target = actions_scaled + self.default_dof_pos
             elif self.cfg.control.action_mode == "nobias":
                 motor_target = self.dof_pos_hard_limits[:, 0].unsqueeze(dim=0) + (
-                        torch.clamp(actions_scaled, -1, 1) + 1) / 2 * (
-                                   (self.dof_pos_hard_limits[:, 1] - self.dof_pos_hard_limits[:, 0]).unsqueeze(dim=0))
+                    torch.clamp(actions_scaled, -1, 1) + 1) / 2 * ((self.dof_pos_hard_limits[:, 1] - self.dof_pos_hard_limits[:, 0]).unsqueeze(dim=0))
             else:
                 raise NotImplementedError
-            self.overshoot_buf = self.overshoot_buf + (
-                        motor_target - self.dof_pos_hard_limits[:, 1].unsqueeze(dim=0)).clip(min=0) + (
-                                             self.dof_pos_hard_limits[:, 0].unsqueeze(dim=0) - motor_target).clip(min=0)
+            self.overshoot_buf = self.overshoot_buf + (motor_target - self.dof_pos_hard_limits[:, 1].unsqueeze(dim=0)).clip(min=0) + (self.dof_pos_hard_limits[:, 0].unsqueeze(dim=0) - motor_target).clip(min=0)
             # self.q_diff_buf = self.q_diff_buf + (torch.abs(motor_target - self.dof_pos) - 2 * self.torque_limits / self.p_gains).clip(min=0)
             # motor_target = self.dof_pos + torch.clamp(motor_target - self.dof_pos, -2 * self.torque_limits / self.p_gains, 2 * self.torque_limits / self.p_gains)
-            torques = self.p_gains * self.Kp_factor * dynamic_factor * (
-                        motor_target - self.dof_pos) - self.d_gains * self.Kd_factor * dynamic_factor * self.dof_vel
-        elif control_type == "V":
-            torques = self.p_gains * (actions_scaled - self.dof_vel) - self.d_gains * (
-                        self.dof_vel - self.last_dof_vel) / self.sim_params.dt
-        elif control_type == "T":
+            torques = self.p_gains*self.Kp_factor*dynamic_factor*(motor_target - self.dof_pos) - self.d_gains*self.Kd_factor*dynamic_factor*self.dof_vel
+        elif control_type=="V":
+            torques = self.p_gains*(actions_scaled - self.dof_vel) - self.d_gains*(self.dof_vel - self.last_dof_vel)/self.sim_params.dt
+        elif control_type=="T":
             torques = actions_scaled
         else:
             raise NameError(f"Unknown controller type: {control_type}")
-        res = torch.clip(torques, -self.torque_limits * self.cfg.control.torque_scale,
-                         self.torque_limits * self.cfg.control.torque_scale)
+        res = torch.clip(torques, -self.torque_limits * self.cfg.control.torque_scale, self.torque_limits * self.cfg.control.torque_scale)
         # self.torque_buffer.append(res[0].cpu().numpy())
         # self.save_data_buffer['q'].append(self.dof_pos[0].cpu().numpy())
         # self.save_data_buffer['q_des'].append(motor_target[0].cpu().numpy())
@@ -1129,11 +1120,9 @@ class Lite3Bipedal(BaseTask):
         self.base_quat = self.root_states[:, 3:7]
 
         # self.lag_buffer = [torch.zeros_like(self.dof_pos) for i in range(self.cfg.domain_rand.lag_timesteps+1)]
-        self.lag_buffer = torch.zeros((self.num_envs, self.num_dof, self.cfg.domain_rand.lag_timesteps + 1),
-                                      dtype=torch.float, device=self.device)
+        self.lag_buffer = torch.zeros((self.num_envs, self.num_dof, self.cfg.domain_rand.lag_timesteps + 1), dtype=torch.float, device=self.device)
         self.lag_steps = torch.zeros((self.num_envs, self.num_dof), dtype=int, device=self.device)
-        self.valid_history_length = torch.ones((self.num_envs, self.num_dof), dtype=int, device=self.device) * (
-                    self.cfg.domain_rand.lag_timesteps + 1)
+        self.valid_history_length = torch.ones((self.num_envs, self.num_dof), dtype=int, device=self.device) * (self.cfg.domain_rand.lag_timesteps + 1)
 
         self.rpy = get_euler_xyz(self.base_quat)  # xyzw
         self.old_rpy = self.rpy.clone()
@@ -1167,6 +1156,7 @@ class Lite3Bipedal(BaseTask):
         self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.lagged_actions = torch.zeros(self.num_envs, self.num_dofs, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
         self.last_dof_pos = torch.zeros_like(self.dof_pos)

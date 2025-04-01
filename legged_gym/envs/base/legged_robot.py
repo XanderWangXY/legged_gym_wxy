@@ -691,6 +691,7 @@ class LeggedRobot(BaseTask):
         self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+        self.back_last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool,device=self.device, requires_grad=False)
         self.contact = torch.zeros_like(self.last_contacts)
         self.contact_filt = torch.zeros_like(self.last_contacts)
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
@@ -1177,13 +1178,13 @@ class LeggedRobot(BaseTask):
 
         # 计算当前接触状态
         contact = self.contact_forces[:, feet_indices_tensor, 2] > 1.0  # (batch_size, num_feet)
-        if not hasattr(self,"last_contacts") or self.last_contacts.shape != contact.shape:
-            self.last_contacts = torch.zeros_like(contact,dtype=torch.bool,device=contact.device)
+        if not hasattr(self,"last_contacts") or self.back_last_contacts.shape != contact.shape:
+            self.back_last_contacts = torch.zeros_like(contact,dtype=torch.bool,device=contact.device)
 
         if not hasattr(self,"feet_air_time") or self.feet_air_time.shape != contact.shape:
             self.feet_air_time = torch.zeros_like(contact,dtype=torch.float,device=contact.device)
-        contact_filt = torch.logical_or(contact,self.last_contacts)
-        self.last_contacts=contact
+        contact_filt = torch.logical_or(contact,self.back_last_contacts)
+        self.back_last_contacts=contact
         first_contact = (self.feet_air_time > 0.0) * contact_filt
         self.feet_air_time+=self.dt
         rew_airTime = torch.sum((self.feet_air_time - threshold) * first_contact,dim=1)

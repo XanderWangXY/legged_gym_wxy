@@ -136,7 +136,7 @@ class Lite3HandStandCfg( LeggedRobotCfg ):
 
     class params:  # 参数单独放在params类中
         handstand_feet_height_exp = {
-            "target_height": 0.6,
+            "target_height": 0.75,
             "std": 0.5
         }
         handstand_orientation_l2 = {
