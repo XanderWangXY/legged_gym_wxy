@@ -29,11 +29,12 @@
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
+from legged_gym.envs.lite3.lite3_config import Lite3RoughCfgPPO
 
-class Lite3RoughCfg( LeggedRobotCfg ):
+class Lite3SkillCfg( LeggedRobotCfg ):
     class env(LeggedRobotCfg.env):
         num_observations = 45#235-187
-        num_privileged_obs = 187+36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        num_privileged_obs = 36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
         num_envs = 4096
 
@@ -57,9 +58,9 @@ class Lite3RoughCfg( LeggedRobotCfg ):
         }
 
     class terrain( LeggedRobotCfg.terrain ):
-        mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
+        mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
         # rough terrain only:
-        measure_heights = True
+        measure_heights = False
         num_rows= 10 # number of terrain rows (levels)
         num_cols = 20 # number of terrain cols (types)
         # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
@@ -73,7 +74,7 @@ class Lite3RoughCfg( LeggedRobotCfg ):
         randomize_base_mass = True
         added_mass_range = [-1., 3.]
         randomize_com_offset = True
-        com_offset_range = [[-0.05, 0.01], [-0.03, 0.03], [-0.03, 0.03]]
+        com_offset_range = [[-0.05, 0.01], [-0.03, 0.03], [-0.08, 0.08]]
         randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         randomize_Kp_factor = True
@@ -106,34 +107,128 @@ class Lite3RoughCfg( LeggedRobotCfg ):
         compliance = 0.5
   
     class rewards( LeggedRobotCfg.rewards ):
-        soft_dof_pos_limit = 0.9
-        base_height_target = 0.25
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        tracking_sigma = 0.25  # tracking reward = exp(-error^2/sigma)
+        soft_dof_pos_limit = 1.  # percentage of urdf limits, values above this limit are penalized
+        soft_dof_vel_limit = 1.
+        soft_torque_limit = 1.
+        base_height_target = 1.
+        max_contact_force = 100.
         class scales( LeggedRobotCfg.rewards.scales ):
-            torques = -0.0002
-            dof_pos_limits = -10.0
-            stand_still = -0.0#5
+            # #handstand#
+            # termination = -0.0
+            # tracking_lin_vel = 0.#3.0
+            # tracking_ang_vel = 0.#1.5
+            #tracking_lin_vel_skill = 2.  # 20.0
+            #tracking_ang_vel_skill = 1.  # 6.66
+            # lin_vel_z = -0.0
+            # ang_vel_xy = -0.0
+            # orientation = -0.0
+            # torques = -0.0002
+            # torque_limits = -1
+            # dof_vel = -0.
+            # dof_acc = -2.5e-7
+            # base_height = -0.5
+            # feet_air_time = 0.0
+            # collision = -2.
+            # feet_stumble = -0.0
+            # action_rate = -0.01
+            # stand_still = -0.
+            # handstand_feet_height_exp = 10.0
+            # handstand_feet_on_air = 1.0
+            # handstand_feet_air_time = 1.0
+            # handstand_orientation_l2 = -1.0
+
+            #backflip#
+            termination = -0.0
+            tracking_lin_vel = 0.#20.0
+            tracking_ang_vel = 0.#6.66
+            #lin_vel_z = -0.0
+            ang_vel_xy = -0.0
+            orientation = -0.0
+            torques = 0.#-0.0002
+            dof_vel = -0.
+            dof_acc = 0.#-2.5e-7
+            base_height = -0.
+            feet_air_time = 0.#0.0
+            collision = 0.#-20.
+            feet_stumble = -0.0
+            #action_rate = -0.01
+            stand_still = -0.
+
+            # jump_height = 5.
+            # jump_goal = 100.
+            # jump_height_roll = 0.
+            # jump_goal_roll = 0.
+            # pitch = 50.
+            # jump_forward = 0.
+
+            # tracking_lin_vel_skill = 2.  # 20.0
+            # tracking_ang_vel_skill = 1.  # 6.66
+            ang_vel_y= 5.0
+            ang_vel_z= -1.0
+            lin_vel_z= 20.0
+            orientation_control= -1.0
+            feet_height_before_backflip= -30.0
+            height_control= -10.0
+            actions_symmetry= -0.1
+            gravity_y= -10.0
+            feet_distance= -1.0
+            action_rate= -0.001
+
+    class commands:
+        curriculum = False
+        max_curriculum = 1.
+        num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        resampling_time = 10. # time before command are changed[s]
+        heading_command = True # if true: compute ang vel command from heading error
+        class ranges:
+            lin_vel_x = [-1.0, 1.0] # min max [m/s]
+            lin_vel_y = [-1.0, 1.0]   # min max [m/s]
+            ang_vel_yaw = [-1, 1]    # min max [rad/s]
+            heading = [-3.14, 3.14]
+
+    class params:  # 参数单独放在params类中
+        handstand_feet_height_exp = {
+            "target_height": 0.7,
+            "std": 0.5
+        }
+        handstand_orientation_l2 = {
+            "target_gravity": [-1.0, 0., -0.0]
+        }
+        handstand_feet_air_time = {
+            "threshold": 5.0
+        }
+        feet_name_reward={
+            "feet_name" : ".*_FOOT"
+        }
+        walk_height_goal={
+            "walk_height_goal": 0.32,
+        }
+        jump_height_goal={
+            "jump_height_goal":0.7,
+            "std": 0.25
+        }
+        epsilon_h = {
+            "epsilon_h": 0.05
+        }
 
     class student:
         student = False
         num_envs = 192
 
-class Lite3RoughCfgPPO( LeggedRobotCfgPPO ):
-    class algorithm( LeggedRobotCfgPPO.algorithm ):
-        entropy_coef = 0.01
-        student = False
-        dagger_beta = 1.0
-        num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
+    class skill_commands:
+        num_skill_commands = 3
 
+class Lite3SkillCfgPPO( Lite3RoughCfgPPO ):
     class student:
-        num_mini_batches = 6  # mini batch size = num_envs*nsteps / nminibatches
+        num_mini_batches = 2  # mini batch size = num_envs*nsteps / nminibatches
         num_steps_per_env = 120
         num_learning_epochs = 1
 
-    class runner( LeggedRobotCfgPPO.runner ):
+    class runner( Lite3RoughCfgPPO.runner ):
         max_iterations = 15000  # number of policy updates
         run_name = ''
-        experiment_name = 'rough_lite3'
+        experiment_name = 'skill_lite3'
         description = 'test'
         num_steps_per_env = 24
-
-  

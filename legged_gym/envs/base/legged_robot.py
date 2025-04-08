@@ -308,7 +308,7 @@ class LeggedRobot(BaseTask):
         # #     dim=-1)
 
         self.privileged_obs_buf = torch.cat((
-            self.heights.squeeze(-1),
+#            self.heights.squeeze(-1),
             self.base_lin_vel * self.obs_scales.lin_vel,
             #self.base_ang_vel * self.obs_scales.ang_vel,
              contact_states * self.priv_obs_scales.contact_state,
@@ -483,7 +483,7 @@ class LeggedRobot(BaseTask):
         else:
             self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-        # fixed_commands = [-0.6, 0.0, 0.0]
+        # fixed_commands = [0.6, 0.0, 0.0]
         # self.commands[env_ids, 0] = torch.tensor([fixed_commands[0]]).repeat(len(env_ids)).to(device=self.device)
         # self.commands[env_ids, 1] = torch.tensor([fixed_commands[1]]).repeat(len(env_ids)).to(device=self.device)
         # self.commands[env_ids, 2] = torch.tensor([fixed_commands[2]]).repeat(len(env_ids)).to(device=self.device)
@@ -514,6 +514,7 @@ class LeggedRobot(BaseTask):
         else:
             raise NameError(f"Unknown controller type: {control_type}")
         torques = torques * self.motor_strengths
+        #print(torques)
         return torch.clip(torques, -self.torque_limits, self.torque_limits)
 
     def _reset_dofs(self, env_ids):
@@ -1209,3 +1210,13 @@ class LeggedRobot(BaseTask):
         )
 
         return torch.sum((self.projected_gravity - target_gravity) ** 2, dim=1)
+
+    def _reward_tracking_lin_vel_skill(self):
+        # Tracking of linear velocity commands (xy axes)
+        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.root_states[:, 7:9]), dim=1)
+        return torch.exp(-lin_vel_error / self.cfg.rewards.tracking_sigma)
+
+    def _reward_tracking_ang_vel_skill(self):
+        # Tracking of angular velocity commands (yaw)
+        ang_vel_error = torch.square(self.commands[:, 2] - self.root_states[:, 12])
+        return torch.exp(-ang_vel_error / self.cfg.rewards.tracking_sigma)

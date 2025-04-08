@@ -123,15 +123,15 @@ class Lite3AMPCfg( LeggedRobotCfg ):
             lin_vel_z = 0.0
             ang_vel_xy = 0.0
             orientation = 0.0
-            torques = -1e-4* 1. / (.005 * 6)
+            torques = 0.#-1e-4* 1. / (.005 * 6)
             dof_vel = 0.0
-            dof_acc = -2.5e-7* 1. / (.005 * 6)
+            dof_acc = 0.#-2.5e-7* 1. / (.005 * 6)
             dof_pos_limits = 0.#-10.0* 1. / (.005 * 6)
             base_height = 0.0
-            feet_air_time =  1.0* 1. / (.005 * 6)
-            collision = -0.01* 1. / (.005 * 6)
+            feet_air_time =  0.#1.0* 1. / (.005 * 6)
+            collision = 0.#-0.01* 1. / (.005 * 6)
             feet_stumble = 0.0
-            action_rate = -0.01* 1. / (.005 * 6)
+            action_rate = 0.#-0.01* 1. / (.005 * 6)
             stand_still = 0.0
             dof_pos_limits = 0.0
 
@@ -146,7 +146,7 @@ class Lite3AMPCfg( LeggedRobotCfg ):
         resampling_time = 10. # time before command are changed[s]
         heading_command = False # if true: compute ang vel command from heading error
         class ranges:
-            lin_vel_x = [-1.0, 2.5] # min max [m/s]
+            lin_vel_x = [-1.0, 3.5] # min max [m/s]
             lin_vel_y = [-1.0, 1.0]   # min max [m/s]
             ang_vel_yaw = [-1.57, 1.57]    # min max [rad/s]
             heading = [-3.14, 3.14]
