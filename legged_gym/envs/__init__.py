@@ -41,7 +41,7 @@ from .a1.a1_config import A1RoughCfg, A1RoughCfgPPO
 from .lite3.lite3_config import Lite3RoughCfg,Lite3RoughCfgPPO
 from .lite3.lite3_amp_config import Lite3AMPCfg,Lite3AMPCfgPPO
 from .lite3.lite3_amp import Lite3AMP
-from .lite3.lite3_handstand_config import Lite3HandStandCfg
+from .lite3.lite3_handstand_config import Lite3HandStandCfg, Lite3FootStandCfg
 from .lite3.lite3_skill import Lite3Skill
 from .lite3.lite3_skill_config import Lite3SkillCfg, Lite3SkillCfgPPO
 
@@ -58,4 +58,5 @@ task_registry.register( "cassie", Cassie, CassieRoughCfg(), CassieRoughCfgPPO() 
 task_registry.register( "lite3", LeggedRobot, Lite3RoughCfg(), Lite3RoughCfgPPO() )
 task_registry.register( "lite3amp", Lite3AMP, Lite3AMPCfg(), Lite3AMPCfgPPO() )
 task_registry.register( "lite3skill", Lite3Skill, Lite3SkillCfg(), Lite3SkillCfgPPO() )
-task_registry.register( "lite3handstand", LeggedRobot, Lite3HandStandCfg(), Lite3SkillCfgPPO() )
+task_registry.register( "lite3handstand", Lite3Skill, Lite3HandStandCfg(), Lite3SkillCfgPPO() )
+task_registry.register( "lite3footstand", Lite3Skill, Lite3FootStandCfg(), Lite3SkillCfgPPO() )

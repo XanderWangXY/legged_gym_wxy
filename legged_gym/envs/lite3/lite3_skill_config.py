@@ -33,7 +33,7 @@ from legged_gym.envs.lite3.lite3_config import Lite3RoughCfgPPO
 
 class Lite3SkillCfg( LeggedRobotCfg ):
     class env(LeggedRobotCfg.env):
-        num_observations = 45#235-187
+        num_observations = 45+6#235-187
         num_privileged_obs = 36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
         num_envs = 4096
@@ -222,7 +222,7 @@ class Lite3SkillCfg( LeggedRobotCfg ):
 
 class Lite3SkillCfgPPO( Lite3RoughCfgPPO ):
     class student:
-        num_mini_batches = 2  # mini batch size = num_envs*nsteps / nminibatches
+        num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
         num_steps_per_env = 120
         num_learning_epochs = 1
 

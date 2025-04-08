@@ -73,15 +73,8 @@ class Lite3Skill(LeggedRobot):
         self.debug_viz = False
         self.init_done = False
         self._parse_cfg(self.cfg)
-        self.task_name = 'lite3bipedal'
         super().__init__(self.cfg, sim_params, physics_engine, sim_device, headless)
-
-        if not self.headless:
-            self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
-        self._init_buffers()
-        self._prepare_reward_function()
-        self.count = 0
-        self.init_done = True
+        self.task_name = 'lite3skill'
 
     # def reset_idx(self, env_ids):
     #     """ Reset some environments.
@@ -235,148 +228,167 @@ class Lite3Skill(LeggedRobot):
     #     #self.skill_commands[env_ids, 2] = torch.randint(low=0,high=2,size=(len(env_ids), 1), device=self.device,dtype=torch.float).squeeze(1)
     #     self.skill_commands[env_ids, 2] = 1.
     #
-    # def _init_buffers(self):
-    #     """ Initialize torch tensors which will contain simulation states and processed quantities
-    #     """
-    #     # get gym GPU state tensors
-    #     actor_root_state = self.gym.acquire_actor_root_state_tensor(self.sim)
-    #     dof_state_tensor = self.gym.acquire_dof_state_tensor(self.sim)
-    #     net_contact_forces = self.gym.acquire_net_contact_force_tensor(self.sim)
-    #     rigid_body_state = self.gym.acquire_rigid_body_state_tensor(self.sim)
-    #     sensor_tensor = self.gym.acquire_force_sensor_tensor(self.sim)
-    #     self.gym.refresh_dof_state_tensor(self.sim)
-    #     self.gym.refresh_actor_root_state_tensor(self.sim)
-    #     self.gym.refresh_net_contact_force_tensor(self.sim)
-    #     self.gym.refresh_rigid_body_state_tensor(self.sim)
-    #     self.gym.refresh_force_sensor_tensor(self.sim)
+    def _init_buffers(self):
+        """ Initialize torch tensors which will contain simulation states and processed quantities
+        """
+        # get gym GPU state tensors
+        actor_root_state = self.gym.acquire_actor_root_state_tensor(self.sim)
+        dof_state_tensor = self.gym.acquire_dof_state_tensor(self.sim)
+        net_contact_forces = self.gym.acquire_net_contact_force_tensor(self.sim)
+        rigid_body_state = self.gym.acquire_rigid_body_state_tensor(self.sim)
+        sensor_tensor = self.gym.acquire_force_sensor_tensor(self.sim)
+        self.gym.refresh_dof_state_tensor(self.sim)
+        self.gym.refresh_actor_root_state_tensor(self.sim)
+        self.gym.refresh_net_contact_force_tensor(self.sim)
+        self.gym.refresh_rigid_body_state_tensor(self.sim)
+        self.gym.refresh_force_sensor_tensor(self.sim)
+
+        # create some wrapper tensors for different slices
+        self.root_states = gymtorch.wrap_tensor(actor_root_state)
+        self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
+        self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
+        self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
+        self.base_quat = self.root_states[:, 3:7]
+        self.rigid_body_states = gymtorch.wrap_tensor(rigid_body_state)
+        self.rigid_body_pos = self.rigid_body_states.view(self.num_envs, self.num_bodies, 13)[..., 0:3]
+        self.rpy = get_euler_xyz(self.base_quat)  # xyzw
+        self.old_rpy = self.rpy.clone()
+        self.old_pos = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device, requires_grad=False)
+        self.old_pos[:] = self.root_states[:, :3]
+        self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1,3)  # shape: num_envs, num_bodies, xyz axis
+        self.rigid_body_state = gymtorch.wrap_tensor(rigid_body_state).view(self.num_envs, -1, 13)
+        # print(self.rigid_body_state.shape)  # 4*5 + 1
+        # print(self.feet_indices)
+        # print("num_envs = ", self.num_envs)
+
+        self.feet_pos = self.rigid_body_state[:, self.feet_indices, 0:3]
+        # self.hip_pos = self.rigid_body_state[:, self.feet_indices-3, 0:3]
+
+        self.sensor_forces = gymtorch.wrap_tensor(sensor_tensor).view(self.num_envs, 4, 6)[..., :3]
+
+        self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3) # shape: num_envs, num_bodies, xyz axis
+
+        # initialize some data used later on
+        self.common_step_counter = 0
+        self.extras = {}
+        self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
+        self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
+        self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
+        self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_dof_vel = torch.zeros_like(self.dof_vel)
+        self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
+        self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
+        self.skill_commands = torch.zeros(self.num_envs, self.cfg.skill_commands.num_skill_commands, dtype=torch.float,
+                                    device=self.device, requires_grad=False)
+        self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
+        self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+        self.back_last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool,device=self.device, requires_grad=False)
+        self.contact = torch.zeros_like(self.last_contacts)
+        self.contact_filt = torch.zeros_like(self.last_contacts)
+        self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
+        self.world_lin_vel = self.root_states[:, 7:10]
+        self.world_lin_acc = torch.zeros_like(self.world_lin_vel)
+        self.base_lin_acc = torch.zeros_like(self.world_lin_acc)
+        self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
+        self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+        self.imu_G_offset = to_torch([0., 0., 9.8], device=self.device).repeat((self.num_envs, 1))
+
+        self.is_jumping = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.is_descending = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.jump_target_height = torch.ones(self.num_envs, dtype=torch.float, device=self.device)
+        self.jump_target_height = self.jump_target_height*self.cfg.params.jump_height_goal["jump_height_goal"]
+
+        self.feet_link_indices = [i for i, name in enumerate(self.rigid_body_names) if
+                        re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
+        # print(feet_indices)
+        # print("Rigid body pos shape:", self.rigid_body_pos.shape)
+        self.feet_indices_tensor = torch.tensor(self.feet_link_indices, dtype=torch.long, device=self.rigid_body_pos.device)
+        # feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
+        self.foot_positions = self.rigid_body_pos[:, self.feet_indices_tensor, :]
+
+        if self.cfg.terrain.measure_heights:
+            self.height_points = self._init_height_points()
+            self.heights = torch.zeros((self.num_envs, 187),
+                                       device=self.device,
+                                       dtype=torch.float,
+                                       requires_grad=False)
+        self.measured_heights = 0
+        #self.friction_coeffs = None
+        self.push_forces = torch.zeros((self.num_envs, self.num_bodies, 3),
+                                       device=self.device,
+                                       dtype=torch.float,
+                                       requires_grad=False)
+        self.push_torques = torch.zeros((self.num_envs, self.num_bodies, 3),
+                                        device=self.device,
+                                        dtype=torch.float,
+                                        requires_grad=False)
+
+        # joint positions offsets and PD gains
+        self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+        for i in range(self.num_dofs):
+            name = self.dof_names[i]
+            angle = self.cfg.init_state.default_joint_angles[name]
+            self.default_dof_pos[i] = angle
+            found = False
+            for dof_name in self.cfg.control.stiffness.keys():
+                if dof_name in name:
+                    self.p_gains[i] = self.cfg.control.stiffness[dof_name]
+                    self.d_gains[i] = self.cfg.control.damping[dof_name]
+                    found = True
+            if not found:
+                self.p_gains[i] = 0.
+                self.d_gains[i] = 0.
+                if self.cfg.control.control_type in ["P", "V"]:
+                    print(f"PD gain of joint {name} were not defined, setting them to zero")
+        self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
+        self.base_init_quat = torch.tensor([1., 0., 0., 0.], device=self.device)
     #
-    #     # create some wrapper tensors for different slices
-    #     self.root_states = gymtorch.wrap_tensor(actor_root_state)
-    #     self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
-    #     self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
-    #     self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
-    #     self.base_quat = self.root_states[:, 3:7]
-    #     self.rigid_body_states = gymtorch.wrap_tensor(rigid_body_state)
-    #     self.rigid_body_pos = self.rigid_body_states.view(self.num_envs, self.num_bodies, 13)[..., 0:3]
-    #     self.rpy = get_euler_xyz(self.base_quat)  # xyzw
-    #     self.old_rpy = self.rpy.clone()
-    #     self.old_pos = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device, requires_grad=False)
-    #     self.old_pos[:] = self.root_states[:, :3]
-    #     self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1,3)  # shape: num_envs, num_bodies, xyz axis
-    #     self.rigid_body_state = gymtorch.wrap_tensor(rigid_body_state).view(self.num_envs, -1, 13)
-    #     # print(self.rigid_body_state.shape)  # 4*5 + 1
-    #     # print(self.feet_indices)
-    #     # print("num_envs = ", self.num_envs)
-    #
-    #     self.feet_pos = self.rigid_body_state[:, self.feet_indices, 0:3]
-    #     # self.hip_pos = self.rigid_body_state[:, self.feet_indices-3, 0:3]
-    #
-    #     self.sensor_forces = gymtorch.wrap_tensor(sensor_tensor).view(self.num_envs, 4, 6)[..., :3]
-    #
-    #     self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3) # shape: num_envs, num_bodies, xyz axis
-    #
-    #     # initialize some data used later on
-    #     self.common_step_counter = 0
-    #     self.extras = {}
-    #     self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
-    #     self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
-    #     self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
-    #     self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-    #     self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-    #     self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-    #     self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-    #     self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-    #     self.last_dof_vel = torch.zeros_like(self.dof_vel)
-    #     self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
-    #     self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
-    #     self.skill_commands = torch.zeros(self.num_envs, self.cfg.skill_commands.num_skill_commands, dtype=torch.float,
-    #                                 device=self.device, requires_grad=False)
-    #     self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
-    #     self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
-    #     self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
-    #     self.back_last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool,device=self.device, requires_grad=False)
-    #     self.contact = torch.zeros_like(self.last_contacts)
-    #     self.contact_filt = torch.zeros_like(self.last_contacts)
-    #     self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
-    #     self.world_lin_vel = self.root_states[:, 7:10]
-    #     self.world_lin_acc = torch.zeros_like(self.world_lin_vel)
-    #     self.base_lin_acc = torch.zeros_like(self.world_lin_acc)
-    #     self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
-    #     self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
-    #     self.imu_G_offset = to_torch([0., 0., 9.8], device=self.device).repeat((self.num_envs, 1))
-    #
-    #     self.is_jumping = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-    #     self.is_descending = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-    #     self.jump_target_height = torch.ones(self.num_envs, dtype=torch.float, device=self.device)
-    #     self.jump_target_height = self.jump_target_height*self.cfg.params.jump_height_goal["jump_height_goal"]
-    #
-    #     self.feet_link_indices = [i for i, name in enumerate(self.rigid_body_names) if
-    #                     re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
-    #     # print(feet_indices)
-    #     # print("Rigid body pos shape:", self.rigid_body_pos.shape)
-    #     self.feet_indices_tensor = torch.tensor(self.feet_link_indices, dtype=torch.long, device=self.rigid_body_pos.device)
-    #     # feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
-    #     self.foot_positions = self.rigid_body_pos[:, self.feet_indices_tensor, :]
-    #
-    #     if self.cfg.terrain.measure_heights:
-    #         self.height_points = self._init_height_points()
-    #         self.heights = torch.zeros((self.num_envs, 187),
-    #                                    device=self.device,
-    #                                    dtype=torch.float,
-    #                                    requires_grad=False)
-    #     self.measured_heights = 0
-    #     #self.friction_coeffs = None
-    #     self.push_forces = torch.zeros((self.num_envs, self.num_bodies, 3),
-    #                                    device=self.device,
-    #                                    dtype=torch.float,
-    #                                    requires_grad=False)
-    #     self.push_torques = torch.zeros((self.num_envs, self.num_bodies, 3),
-    #                                     device=self.device,
-    #                                     dtype=torch.float,
-    #                                     requires_grad=False)
-    #
-    #     # joint positions offsets and PD gains
-    #     self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
-    #     for i in range(self.num_dofs):
-    #         name = self.dof_names[i]
-    #         angle = self.cfg.init_state.default_joint_angles[name]
-    #         self.default_dof_pos[i] = angle
-    #         found = False
-    #         for dof_name in self.cfg.control.stiffness.keys():
-    #             if dof_name in name:
-    #                 self.p_gains[i] = self.cfg.control.stiffness[dof_name]
-    #                 self.d_gains[i] = self.cfg.control.damping[dof_name]
-    #                 found = True
-    #         if not found:
-    #             self.p_gains[i] = 0.
-    #             self.d_gains[i] = 0.
-    #             if self.cfg.control.control_type in ["P", "V"]:
-    #                 print(f"PD gain of joint {name} were not defined, setting them to zero")
-    #     self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
-    #     self.base_init_quat = torch.tensor([1., 0., 0., 0.], device=self.device)
-    #
-    # def compute_observations(self):
-    #     """ Computes observations
-    #     """
-    #     self.obs_buf = torch.cat((  #self.base_lin_vel * self.obs_scales.lin_vel,
-    #                                 #self.skill_commands,
-    #                                 self.commands[:, :3] * self.commands_scale,
-    #                                 #self.projected_gravity,
-    #                                 self.rpy * self.obs_scales.orientation,
-    #                                 self.base_ang_vel  * self.obs_scales.ang_vel,
-    #                                 (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
-    #                                 self.dof_vel * self.obs_scales.dof_vel,
-    #                                 self.actions
-    #                                 ),dim=-1)
-    #     # add perceptive inputs if not blind
-    #     if self.cfg.terrain.measure_heights:
-    #         heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
-    #         self.heights=heights
-    #         #self.obs_buf = torch.cat((self.obs_buf, heights), dim=-1)
-    #     # add noise if needed
-    #     if self.add_noise:
-    #         self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
-    #     #print(self.commands)
+    def compute_observations(self):
+        """ Computes observations
+        """
+        if self.cfg.env.num_observations==51:
+            phase = torch.pi * self.episode_length_buf[:, None] / self.max_episode_length
+            self.obs_buf = torch.cat((  #self.base_lin_vel * self.obs_scales.lin_vel,
+                                        #self.skill_commands,
+                                        self.commands[:, :3] * self.commands_scale,
+                                        #self.projected_gravity,
+                                        self.rpy * self.obs_scales.orientation,
+                                        self.base_ang_vel  * self.obs_scales.ang_vel,
+                                        (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
+                                        self.dof_vel * self.obs_scales.dof_vel,
+                                        self.actions,
+                                        torch.sin(phase),
+                                        torch.cos(phase),
+                                        torch.sin(phase / 2),
+                                        torch.cos(phase / 2),
+                                        torch.sin(phase / 4),
+                                        torch.cos(phase / 4),
+                                        ),dim=-1)
+        else:
+            self.obs_buf = torch.cat((  # self.base_lin_vel * self.obs_scales.lin_vel,
+                # self.skill_commands,
+                self.commands[:, :3] * self.commands_scale,
+                # self.projected_gravity,
+                self.rpy * self.obs_scales.orientation,
+                self.base_ang_vel * self.obs_scales.ang_vel,
+                (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
+                self.dof_vel * self.obs_scales.dof_vel,
+                self.actions,
+            ), dim=-1)
+        # add perceptive inputs if not blind
+        if self.cfg.terrain.measure_heights:
+            heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
+            self.heights=heights
+            #self.obs_buf = torch.cat((self.obs_buf, heights), dim=-1)
+        # add noise if needed
+        if self.add_noise:
+            self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
+        #print(self.commands)
     #
     # def compute_privileged_observations(self):
     #     """ Computes privileged observations

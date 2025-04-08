@@ -30,7 +30,7 @@
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
-class Lite3HandStandCfg( LeggedRobotCfg ):
+class Lite3FootStandCfg( LeggedRobotCfg ):
     class env(LeggedRobotCfg.env):
         num_observations = 45#235-187
         num_privileged_obs = 36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
@@ -135,7 +135,7 @@ class Lite3HandStandCfg( LeggedRobotCfg ):
             handstand_feet_height_exp = 10.0
             handstand_feet_on_air = 1.0
             handstand_feet_air_time = 1.0
-            handstand_orientation_l2 = -1.0
+            handstand_orientation_l2 = -2.0
 
     class commands:
         curriculum = False
@@ -155,7 +155,7 @@ class Lite3HandStandCfg( LeggedRobotCfg ):
             "std": 0.5
         }
         handstand_orientation_l2 = {
-            "target_gravity": [-0.997, 0., -0.069]
+            "target_gravity": [-0.995, 0., -0.1]
         }
         handstand_feet_air_time = {
             "threshold": 5.0
@@ -178,3 +178,19 @@ class Lite3HandStandCfg( LeggedRobotCfg ):
 
     class skill_commands:
         num_skill_commands = 3
+
+class Lite3HandStandCfg( Lite3FootStandCfg ):
+    class rewards(Lite3FootStandCfg.rewards):
+        base_height_target = 0.42
+
+    class params(Lite3FootStandCfg.params):
+        handstand_feet_height_exp = {
+            "target_height": 0.72,
+            "std": 0.5
+        }
+        handstand_orientation_l2 = {
+            "target_gravity": [0.995, 0., -0.1]
+        }
+        feet_name_reward = {
+            "feet_name": "H.*_FOOT"
+        }
