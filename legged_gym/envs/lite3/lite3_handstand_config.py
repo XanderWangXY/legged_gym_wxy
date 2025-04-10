@@ -33,7 +33,7 @@ from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobot
 class Lite3FootStandCfg( LeggedRobotCfg ):
     class env(LeggedRobotCfg.env):
         num_observations = 45#235-187
-        num_privileged_obs = 36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        num_privileged_obs = 36+3+1+3+4+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
         num_envs = 4096
 
@@ -130,12 +130,12 @@ class Lite3FootStandCfg( LeggedRobotCfg ):
             feet_air_time = 0.0
             collision = -2.
             feet_stumble = -0.0
-            action_rate = -0.01
+            action_rate = -0.05
             stand_still = -0.
             handstand_feet_height_exp = 10.0
             handstand_feet_on_air = 1.0
             handstand_feet_air_time = 1.0
-            handstand_orientation_l2 = -2.0
+            handstand_orientation_l2 = -2.5
 
     class commands:
         curriculum = False
@@ -144,8 +144,8 @@ class Lite3FootStandCfg( LeggedRobotCfg ):
         resampling_time = 10. # time before command are changed[s]
         heading_command = True # if true: compute ang vel command from heading error
         class ranges:
-            lin_vel_x = [-1.0, 1.0] # min max [m/s]
-            lin_vel_y = [-1.0, 1.0]   # min max [m/s]
+            lin_vel_x = [-0.6, 0.6] # min max [m/s]
+            lin_vel_y = [-0.6, 0.6]   # min max [m/s]
             ang_vel_yaw = [-1, 1]    # min max [rad/s]
             heading = [-3.14, 3.14]
 
@@ -155,7 +155,7 @@ class Lite3FootStandCfg( LeggedRobotCfg ):
             "std": 0.5
         }
         handstand_orientation_l2 = {
-            "target_gravity": [-0.995, 0., -0.1]
+            "target_gravity": [-1., 0., -0.0]
         }
         handstand_feet_air_time = {
             "threshold": 5.0
@@ -185,7 +185,7 @@ class Lite3HandStandCfg( Lite3FootStandCfg ):
 
     class params(Lite3FootStandCfg.params):
         handstand_feet_height_exp = {
-            "target_height": 0.78,
+            "target_height": 0.73,
             "std": 0.5
         }
         handstand_orientation_l2 = {

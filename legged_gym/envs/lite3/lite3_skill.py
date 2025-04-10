@@ -390,47 +390,48 @@ class Lite3Skill(LeggedRobot):
             self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
         #print(self.commands)
     #
-    # def compute_privileged_observations(self):
-    #     """ Computes privileged observations
-    #     """
-    #     contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
-    #     #print(contact_states)
-    #     # contact_states = torch.norm(self.sensor_forces[:, :, :2], dim=2) > 1. # todo
-    #     # contact_forces = self.sensor_forces.flatten(1)
-    #     # contact_normals = self.contact_normal
-    #     if self.friction_coeffs is not None:
-    #         friction_coefficients = self.friction_coeffs.squeeze(-1).repeat(1, 4).to(self.device)
-    #     else:
-    #         friction_coefficients = torch.tensor(self.cfg.terrain.static_friction).repeat(self.num_envs, 4).to(self.device)
-    #
-    #     # thigh_and_shank_contact = torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1
-    #     external_forces_and_torques = torch.cat((self.push_forces[:, 0, :], self.push_torques[:, 0, :]), dim=-1)
-    #     # # airtime = self.feet_air_time
-    #     # # self.privileged_obs_buf = torch.cat(
-    #     # #     (contact_states * self.priv_obs_scales.contact_state,
-    #     # #      contact_forces * self.priv_obs_scales.contact_force,
-    #     # #      contact_normals * self.priv_obs_scales.contact_normal,
-    #     # #      friction_coefficients * self.priv_obs_scales.friction,
-    #     # #      thigh_and_shank_contact * self.priv_obs_scales.thigh_and_shank_contact_state,
-    #     # #      external_forces_and_torques * self.priv_obs_scales.external_wrench,
-    #     # #      airtime * self.priv_obs_scales.airtime),
-    #     # #     dim=-1)
-    #
-    #     self.privileged_obs_buf = torch.cat((
-    #         #self.heights.squeeze(-1),
-    #         self.base_lin_vel * self.obs_scales.lin_vel,
-    #         #self.base_ang_vel * self.obs_scales.ang_vel,
-    #          contact_states * self.priv_obs_scales.contact_state,
-    #          friction_coefficients * self.priv_obs_scales.friction,
-    #          #external_forces_and_torques * self.priv_obs_scales.external_wrench,
-    #
-    #          (self.mass_payloads - 6) * self.priv_obs_scales.mass_payload,  # payload, 1
-    #          self.com_displacements * self.priv_obs_scales.com_displacement,  # com_displacements, 3
-    #          (self.motor_strengths - 1) * self.priv_obs_scales.motor_strength,  # motor strength, 12
-    #          (self.Kp_factors - 1) * self.priv_obs_scales.kp_factor,  # Kp factor, 12
-    #          (self.Kd_factors - 1) * self.priv_obs_scales.kd_factor,  # Kd factor, 12
-    #     ), dim=1)
-    #     # print(self.privileged_obs_buf.shape)
+    def compute_privileged_observations(self):
+        """ Computes privileged observations
+        """
+        contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
+        #print(contact_states)
+        # contact_states = torch.norm(self.sensor_forces[:, :, :2], dim=2) > 1. # todo
+        # contact_forces = self.sensor_forces.flatten(1)
+        # contact_normals = self.contact_normal
+        if self.friction_coeffs is not None:
+            friction_coefficients = self.friction_coeffs.squeeze(-1).repeat(1, 4).to(self.device)
+        else:
+            friction_coefficients = torch.tensor(self.cfg.terrain.static_friction).repeat(self.num_envs, 4).to(self.device)
+
+        # thigh_and_shank_contact = torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1
+        external_forces_and_torques = torch.cat((self.push_forces[:, 0, :], self.push_torques[:, 0, :]), dim=-1)
+        # # airtime = self.feet_air_time
+        # # self.privileged_obs_buf = torch.cat(
+        # #     (contact_states * self.priv_obs_scales.contact_state,
+        # #      contact_forces * self.priv_obs_scales.contact_force,
+        # #      contact_normals * self.priv_obs_scales.contact_normal,
+        # #      friction_coefficients * self.priv_obs_scales.friction,
+        # #      thigh_and_shank_contact * self.priv_obs_scales.thigh_and_shank_contact_state,
+        # #      external_forces_and_torques * self.priv_obs_scales.external_wrench,
+        # #      airtime * self.priv_obs_scales.airtime),
+        # #     dim=-1)
+
+        self.privileged_obs_buf = torch.cat((
+            #self.heights.squeeze(-1),
+            self.root_states[:, 2].unsqueeze(-1),  # base_height
+            self.root_states[:, 7:10] * self.obs_scales.lin_vel,
+            self.base_ang_vel * self.obs_scales.ang_vel,
+            contact_states * self.priv_obs_scales.contact_state,
+            friction_coefficients * self.priv_obs_scales.friction,
+            #external_forces_and_torques * self.priv_obs_scales.external_wrench,
+
+            (self.mass_payloads - 6) * self.priv_obs_scales.mass_payload,  # payload, 1
+            self.com_displacements * self.priv_obs_scales.com_displacement,  # com_displacements, 3
+            (self.motor_strengths - 1) * self.priv_obs_scales.motor_strength,  # motor strength, 12
+            (self.Kp_factors - 1) * self.priv_obs_scales.kp_factor,  # Kp factor, 12
+            (self.Kd_factors - 1) * self.priv_obs_scales.kd_factor,  # Kd factor, 12
+        ), dim=1)
+        # print(self.privileged_obs_buf.shape)
 
 
     # ------------ reward functions----------------
