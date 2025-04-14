@@ -75,6 +75,7 @@ class Lite3Skill(LeggedRobot):
         self._parse_cfg(self.cfg)
         super().__init__(self.cfg, sim_params, physics_engine, sim_device, headless)
         self.task_name = 'lite3skill'
+        self.rew_cnt = 0
 
     # def reset_idx(self, env_ids):
     #     """ Reset some environments.
@@ -228,6 +229,27 @@ class Lite3Skill(LeggedRobot):
     #     #self.skill_commands[env_ids, 2] = torch.randint(low=0,high=2,size=(len(env_ids), 1), device=self.device,dtype=torch.float).squeeze(1)
     #     self.skill_commands[env_ids, 2] = 1.
     #
+    def compute_reward(self):
+        """ Compute rewards
+            Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
+            adds each terms to the episode sums and to the total reward
+        """
+        self.rew_cnt+=1
+        self.rew_buf[:] = 0.
+        for i in range(len(self.reward_functions)):
+            name = self.reward_names[i]
+            rew = self.reward_functions[i]() * self.reward_scales[name]
+            self.rew_buf += rew
+            self.episode_sums[name] += rew
+        if self.cfg.rewards.only_positive_rewards:
+        #if self.rew_cnt<=24*2000:
+            self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
+        # add termination reward after clipping
+        if "termination" in self.reward_scales:
+            rew = self._reward_termination() * self.reward_scales["termination"]
+            self.rew_buf += rew
+            self.episode_sums["termination"] += rew
+
     def _init_buffers(self):
         """ Initialize torch tensors which will contain simulation states and processed quantities
         """
@@ -351,11 +373,11 @@ class Lite3Skill(LeggedRobot):
     def compute_observations(self):
         """ Computes observations
         """
-        if self.cfg.env.num_observations==51:
-            phase = torch.pi * self.episode_length_buf[:, None] / self.max_episode_length
+        if self.cfg.env.num_observations==48:
+            phase = torch.pi * self.episode_length_buf[:, None] * self.dt / 2
             self.obs_buf = torch.cat((  #self.base_lin_vel * self.obs_scales.lin_vel,
                                         #self.skill_commands,
-                                        self.commands[:, :3] * self.commands_scale,
+                                         #self.commands[:, :3] * self.commands_scale,
                                         #self.projected_gravity,
                                         self.rpy * self.obs_scales.orientation,
                                         self.base_ang_vel  * self.obs_scales.ang_vel,
@@ -390,62 +412,54 @@ class Lite3Skill(LeggedRobot):
             self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
         #print(self.commands)
     #
-    # def compute_privileged_observations(self):
-    #     """ Computes privileged observations
-    #     """
-    #     contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
-    #     #print(contact_states)
-    #     # contact_states = torch.norm(self.sensor_forces[:, :, :2], dim=2) > 1. # todo
-    #     # contact_forces = self.sensor_forces.flatten(1)
-    #     # contact_normals = self.contact_normal
-    #     if self.friction_coeffs is not None:
-    #         friction_coefficients = self.friction_coeffs.squeeze(-1).repeat(1, 4).to(self.device)
-    #     else:
-    #         friction_coefficients = torch.tensor(self.cfg.terrain.static_friction).repeat(self.num_envs, 4).to(self.device)
-    #
-    #     # thigh_and_shank_contact = torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1
-    #     external_forces_and_torques = torch.cat((self.push_forces[:, 0, :], self.push_torques[:, 0, :]), dim=-1)
-    #     # # airtime = self.feet_air_time
-    #     # # self.privileged_obs_buf = torch.cat(
-    #     # #     (contact_states * self.priv_obs_scales.contact_state,
-    #     # #      contact_forces * self.priv_obs_scales.contact_force,
-    #     # #      contact_normals * self.priv_obs_scales.contact_normal,
-    #     # #      friction_coefficients * self.priv_obs_scales.friction,
-    #     # #      thigh_and_shank_contact * self.priv_obs_scales.thigh_and_shank_contact_state,
-    #     # #      external_forces_and_torques * self.priv_obs_scales.external_wrench,
-    #     # #      airtime * self.priv_obs_scales.airtime),
-    #     # #     dim=-1)
-    #
-    #     self.privileged_obs_buf = torch.cat((
-    #         #self.heights.squeeze(-1),
-    #         self.base_lin_vel * self.obs_scales.lin_vel,
-    #         #self.base_ang_vel * self.obs_scales.ang_vel,
-    #          contact_states * self.priv_obs_scales.contact_state,
-    #          friction_coefficients * self.priv_obs_scales.friction,
-    #          #external_forces_and_torques * self.priv_obs_scales.external_wrench,
-    #
-    #          (self.mass_payloads - 6) * self.priv_obs_scales.mass_payload,  # payload, 1
-    #          self.com_displacements * self.priv_obs_scales.com_displacement,  # com_displacements, 3
-    #          (self.motor_strengths - 1) * self.priv_obs_scales.motor_strength,  # motor strength, 12
-    #          (self.Kp_factors - 1) * self.priv_obs_scales.kp_factor,  # Kp factor, 12
-    #          (self.Kd_factors - 1) * self.priv_obs_scales.kd_factor,  # Kd factor, 12
-    #     ), dim=1)
-    #     # print(self.privileged_obs_buf.shape)
+    def compute_privileged_observations(self):
+        """ Computes privileged observations
+        """
+        contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
+        #print(contact_states)
+        # contact_states = torch.norm(self.sensor_forces[:, :, :2], dim=2) > 1. # todo
+        # contact_forces = self.sensor_forces.flatten(1)
+        # contact_normals = self.contact_normal
+        if self.friction_coeffs is not None:
+            friction_coefficients = self.friction_coeffs.squeeze(-1).repeat(1, 4).to(self.device)
+        else:
+            friction_coefficients = torch.tensor(self.cfg.terrain.static_friction).repeat(self.num_envs, 4).to(self.device)
+
+        # thigh_and_shank_contact = torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1
+        external_forces_and_torques = torch.cat((self.push_forces[:, 0, :], self.push_torques[:, 0, :]), dim=-1)
+        # # airtime = self.feet_air_time
+        # # self.privileged_obs_buf = torch.cat(
+        # #     (contact_states * self.priv_obs_scales.contact_state,
+        # #      contact_forces * self.priv_obs_scales.contact_force,
+        # #      contact_normals * self.priv_obs_scales.contact_normal,
+        # #      friction_coefficients * self.priv_obs_scales.friction,
+        # #      thigh_and_shank_contact * self.priv_obs_scales.thigh_and_shank_contact_state,
+        # #      external_forces_and_torques * self.priv_obs_scales.external_wrench,
+        # #      airtime * self.priv_obs_scales.airtime),
+        # #     dim=-1)
+
+        self.privileged_obs_buf = torch.cat((
+            #self.heights.squeeze(-1),
+            self.root_states[:, 2].unsqueeze(-1),#base_height
+            self.root_states[:, 7:10] * self.obs_scales.lin_vel,
+            #self.base_ang_vel * self.obs_scales.ang_vel,
+             contact_states * self.priv_obs_scales.contact_state,
+             friction_coefficients * self.priv_obs_scales.friction,
+             #external_forces_and_torques * self.priv_obs_scales.external_wrench,
+
+             (self.mass_payloads - 6) * self.priv_obs_scales.mass_payload,  # payload, 1
+             self.com_displacements * self.priv_obs_scales.com_displacement,  # com_displacements, 3
+             (self.motor_strengths - 1) * self.priv_obs_scales.motor_strength,  # motor strength, 12
+             (self.Kp_factors - 1) * self.priv_obs_scales.kp_factor,  # Kp factor, 12
+             (self.Kd_factors - 1) * self.priv_obs_scales.kd_factor,  # Kd factor, 12
+        ), dim=1)
+        # print(self.privileged_obs_buf.shape)
 
 
     # ------------ reward functions----------------
-    def _reward_tracking_lin_vel_skill(self):
-        # Tracking of linear velocity commands (xy axes)
-        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.root_states[:, 7:9]), dim=1)
-        return torch.exp(-lin_vel_error / self.cfg.rewards.tracking_sigma)
-
-    def _reward_tracking_ang_vel_skill(self):
-        # Tracking of angular velocity commands (yaw)
-        ang_vel_error = torch.square(self.commands[:, 2] - self.root_states[:, 12])
-        return torch.exp(-ang_vel_error / self.cfg.rewards.tracking_sigma)
-
     def _reward_handstand_feet_height_exp(self):
-        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
+        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if
+                        re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
         # print(feet_indices)
         # print("Rigid body pos shape:", self.rigid_body_pos.shape)
         feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
@@ -457,7 +471,7 @@ class Lite3Skill(LeggedRobot):
         std = self.cfg.params.handstand_feet_height_exp["std"]
         feet_height_error = torch.sum((feet_height - target_height) ** 2, dim=1)
         # print(torch.exp(-feet_height_error / (std**2)))
-        return torch.exp(-feet_height_error / (std**2))
+        return torch.exp(-feet_height_error / (std ** 2))
         # return 0
 
     def _reward_handstand_feet_on_air(self):
@@ -466,7 +480,8 @@ class Lite3Skill(LeggedRobot):
         1. 使用 self.contact_forces 判断足部是否接触地面（通过预先设置的阈值）。
         2. 如果所有足部都没有接触地面，则奖励1，否则奖励为0（或取平均）。
         """
-        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
+        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if
+                        re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
         # print(feet_indices)
         feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
         # contact_forces: shape = (num_envs, num_bodies, 3)
@@ -477,7 +492,6 @@ class Lite3Skill(LeggedRobot):
         return reward
         # return 0
 
-
     def _reward_handstand_feet_air_time(self):
         """
         计算手倒立时足部空中时间奖励
@@ -485,28 +499,27 @@ class Lite3Skill(LeggedRobot):
         threshold = self.cfg.params.handstand_feet_air_time["threshold"]
 
         # 获取 "R.*_foot" 索引
-        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
+        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if
+                        re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
         feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.device)
 
         # 计算当前接触状态
         contact = self.contact_forces[:, feet_indices_tensor, 2] > 1.0  # (batch_size, num_feet)
-        if not hasattr(self,"last_contacts") or self.back_last_contacts.shape != contact.shape:
-            self.back_last_contacts = torch.zeros_like(contact,dtype=torch.bool,device=contact.device)
+        if not hasattr(self, "last_contacts") or self.back_last_contacts.shape != contact.shape:
+            self.back_last_contacts = torch.zeros_like(contact, dtype=torch.bool, device=contact.device)
 
-        if not hasattr(self,"feet_air_time") or self.feet_air_time.shape != contact.shape:
-            self.feet_air_time = torch.zeros_like(contact,dtype=torch.float,device=contact.device)
-        contact_filt = torch.logical_or(contact,self.back_last_contacts)
-        self.back_last_contacts=contact
+        if not hasattr(self, "feet_air_time") or self.feet_air_time.shape != contact.shape:
+            self.feet_air_time = torch.zeros_like(contact, dtype=torch.float, device=contact.device)
+        contact_filt = torch.logical_or(contact, self.back_last_contacts)
+        self.back_last_contacts = contact
         first_contact = (self.feet_air_time > 0.0) * contact_filt
-        self.feet_air_time+=self.dt
-        rew_airTime = torch.sum((self.feet_air_time - threshold) * first_contact,dim=1)
+        self.feet_air_time += self.dt
+        rew_airTime = torch.sum((self.feet_air_time - threshold) * first_contact, dim=1)
         # rew_airTime*=torch.norm(self.commands[:,:2],dim =1)>0.1
         self.feet_air_time *= ~contact_filt
 
-        #print(rew_airTime)
+        # print(rew_airTime)
         return rew_airTime
-
-
 
     def _reward_handstand_orientation_l2(self):
         """
@@ -521,148 +534,88 @@ class Lite3Skill(LeggedRobot):
         )
 
         return torch.sum((self.projected_gravity - target_gravity) ** 2, dim=1)
-    #
-    # def _reward_jump_height(self):
-    #     """
-    #         计算跳跃高度奖励：
-    #         - skill_commands第三位为1：使用跳跃高度目标和x轴速度计算奖励
-    #         - skill_commands第三位为0：使用行走高度目标计算奖励
-    #         - 最终返回所有环境reward的总和（标量）
-    #         """
-    #     # 获取配置参数
-    #     std = self.cfg.params.jump_height_goal["std"]
-    #     jump_height_goal = self.cfg.params.jump_height_goal["jump_height_goal"]
-    #     walk_height_goal = self.cfg.params.walk_height_goal["walk_height_goal"]
-    #
-    #     # 计算所有环境的基础高度
-    #     base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
-    #
-    #     # 计算两种技能的高度误差
-    #     height_error_jump = jump_height_goal - base_height
-    #     height_error_walk = walk_height_goal - base_height
-    #
-    #     # 计算基础奖励部分（指数衰减）
-    #     reward_jump = torch.exp(-torch.square(height_error_jump) / (std ** 2))
-    #     reward_walk = torch.exp(-torch.square(height_error_walk) / (std ** 2))
-    #
-    #     # 应用技能掩码和速度调节
-    #     mask_jump = (self.skill_commands[:, 2] == 1)
-    #     reward = torch.where(
-    #         mask_jump,
-    #         reward_jump * self.base_lin_vel[:, 0].clip(min=-2, max=2),  # 跳跃技能：加入速度调节
-    #         reward_walk  # 行走技能：仅高度奖励
-    #     )
-    #
-    #     return torch.sum(reward,dim=-1)
-    #
-    # def _reward_jump_goal(self):
-    #     """
-    #     计算跳跃目标奖励：
-    #     - skill_commands第三位为1：返回base_lin_vel的裁剪值
-    #     - skill_commands第三位为0：返回0
-    #     """
-    #     epsilon_h = self.cfg.params.epsilon_h["epsilon_h"]
-    #     base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
-    #     jump_height_goal = self.cfg.params.jump_height_goal["jump_height_goal"]
-    #     # 创建复合条件掩码
-    #     height_condition = torch.abs(base_height - jump_height_goal) < epsilon_h
-    #     skill_condition = (self.skill_commands[:, 2] == 1)
-    #     mask = height_condition & skill_condition
-    #
-    #     # 计算奖励
-    #     reward = torch.where(
-    #         mask,
-    #         self.base_lin_vel[:, 0].clip(min=-2, max=2),
-    #         torch.zeros(self.num_envs, device=self.device)
-    #     )
-    #
-    #     return torch.sum(reward,dim=-1)
-    #
-    # def _reward_jump_height_roll(self):
-    #     """
-    #         计算跳跃高度和滚转角的复合奖励：
-    #         - skill_commands第三位为1：使用跳跃高度目标和滚转角绝对值计算奖励
-    #         - skill_commands第三位为0：返回0（不计算奖励）
-    #         - 最终返回所有环境reward的总和（标量）
-    #         """
-    #     # 获取配置参数
-    #     std = self.cfg.params.jump_height_goal["std"]
-    #     jump_height_goal = self.cfg.params.jump_height_goal["jump_height_goal"]
-    #
-    #     # 计算所有环境的基础高度
-    #     base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
-    #
-    #     # 创建复合条件掩码
-    #     mask = (self.skill_commands[:, 2] == 1)  # 仅处理技能指令为1的环境
-    #
-    #     # 计算奖励
-    #     reward = torch.where(
-    #         mask,
-    #         torch.exp(-torch.square(jump_height_goal - base_height) / (std ** 2)) * torch.abs(self.rpy[:, 0]),
-    #         torch.zeros(self.num_envs, device=self.device)
-    #     )
-    #
-    #     return torch.sum(reward,dim=-1)
-    #
-    # def _reward_jump_goal_roll(self):
-    #     """
-    #     计算跳跃目标滚转奖励：
-    #     - skill_commands第三位为1且高度接近目标：返回滚转角绝对值
-    #     - 其他情况：返回0
-    #     - 最终返回所有环境reward的总和（标量）
-    #     """
-    #     epsilon_h = self.cfg.params.epsilon_h["epsilon_h"]
-    #     base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
-    #     jump_height_goal = self.cfg.params.jump_height_goal["jump_height_goal"]
-    #
-    #     # 创建复合条件掩码
-    #     height_condition = torch.abs(base_height - jump_height_goal) < epsilon_h
-    #     skill_condition = (self.skill_commands[:, 2] == 1)
-    #     mask = height_condition & skill_condition
-    #
-    #     # 计算奖励（滚转角绝对值）
-    #     reward = torch.where(
-    #         mask,
-    #         torch.abs(self.rpy[:, 0]),  # 滚转角绝对值
-    #         torch.zeros(self.num_envs, device=self.device)
-    #     )
-    #
-    #     return torch.sum(reward,dim=-1)
-    #
-    # def _reward_pitch(self):
-    #     """
-    #         下落过程中奖励 pitch 角，其他情况奖励为0
-    #         返回:
-    #             torch.Tensor: [num_envs] 每个环境的奖励值
-    #         """
-    #     # 初始化全零奖励
-    #     reward = torch.zeros(self.num_envs, device=self.device)
-    #
-    #     # 仅在下落状态返回 pitch 角
-    #     reward[self.is_descending] = self.rpy[self.is_descending, 1]
-    #
-    #     return torch.sum(reward,dim=-1)
-    #
-    # def _reward_jump_forward(self):
-    #     pass
+
+    def _reward_hipy_angle_threshold(self):
+        # 获取名称匹配 hipy_name 的关节索引
+        hipy_indices = [i for i, name in enumerate(self.dof_names) if
+                        re.match(self.cfg.params.hip_name_reward["hipy_name"], name)]
+
+        # 转为 tensor，放到关节数据所在的设备上
+        hipy_indices_tensor = torch.tensor(hipy_indices, dtype=torch.long, device=self.dof_pos.device)
+
+        # 提取这些关节当前角度（shape: [num_envs, num_hipy_joints]）
+        hipy_angles = self.dof_pos[:, hipy_indices_tensor]
+
+        # 检查所有匹配关节的角度是否都 > -1（按环境维度求 and）
+        is_valid = (hipy_angles > -1.0).all(dim=1)
+
+        # 返回 float 类型的奖励值（1.0 或 0.0）
+        return is_valid.float()
+
+    def _reward_tracking_lin_vel_skill(self):
+        # Tracking of linear velocity commands (xy axes)
+        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.root_states[:, 7:9]), dim=1)
+        return torch.exp(-lin_vel_error / self.cfg.rewards.tracking_sigma)
+
+    def _reward_tracking_ang_vel_skill(self):
+        # Tracking of angular velocity commands (yaw)
+        ang_vel_error = torch.square(self.commands[:, 2] - self.root_states[:, 12])
+        return torch.exp(-ang_vel_error / self.cfg.rewards.tracking_sigma)
+
+    def _reward_both_feet_air(self):
+        """
+        检测双脚是否同时离地，如果是则给予 -1 的惩罚
+        返回:
+            penalty (torch.Tensor): 形状为 (batch_size,) 的惩罚值
+        """
+        # 获取双脚的索引（假设和原方法一致）
+        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if
+                        re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
+        feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.device)
+
+        # 计算当前接触状态（True=触地，False=离地）
+        contact = self.contact_forces[:, feet_indices_tensor, 2] > 1.0  # (batch_size, num_feet)
+
+        # 检测是否双脚同时离地（contact = [False, False]）
+        both_feet_air = torch.all(~contact, dim=1)  # (batch_size,)
+
+        # 如果双脚同时离地，返回 -1，否则返回 0
+        penalty = 1.0 * both_feet_air.float()  # (batch_size,)
+        return penalty
+
+    # ------------ backflip reward----------------
 
     def _reward_ang_vel_y(self):
-        current_time = self.episode_length_buf * self.dt
+        # current_time = self.episode_length_buf * self.dt
+        # ang_vel = -self.base_ang_vel[:, 1].clamp(max=7.2, min=-7.2)
+        # return ang_vel * torch.logical_and(current_time > 0.5, current_time < 1.0)
+
+        # 计算1.8秒周期内的时间
+        cycle_time = (self.episode_length_buf * self.dt) % 2.5
         ang_vel = -self.base_ang_vel[:, 1].clamp(max=7.2, min=-7.2)
-        return ang_vel * torch.logical_and(current_time > 0.5, current_time < 1.0)
+        # 调整为新的空翻阶段时间(0.9-1.4)
+        return ang_vel * torch.logical_and(cycle_time > 0.9, cycle_time < 1.4)
 
     def _reward_ang_vel_z(self):
         return torch.abs(self.base_ang_vel[:, 2])
 
     def _reward_lin_vel_z(self):
-        current_time = self.episode_length_buf * self.dt
+        # current_time = self.episode_length_buf * self.dt
+        # lin_vel = self.base_lin_vel[:, 2].clamp(max=3)
+        # return lin_vel * torch.logical_and(current_time > 0.5, current_time < 0.75)
+        cycle_time = (self.episode_length_buf * self.dt) % 2.5
         lin_vel = self.base_lin_vel[:, 2].clamp(max=3)
-        return lin_vel * torch.logical_and(current_time > 0.5, current_time < 0.75)
+        # 调整为新的起跳初期时间(0.9-1.15)
+        return lin_vel * torch.logical_and(cycle_time > 0.9, cycle_time < 1.15)
 
     def _reward_orientation_control(self):
         # Penalize non flat base orientation
-        current_time = self.episode_length_buf * self.dt
-        phase = (current_time - 0.5).clamp(min=0, max=0.5)
+        # current_time = self.episode_length_buf * self.dt
+        # phase = (current_time - 0.5).clamp(min=0, max=0.5)
+
+        cycle_time = (self.episode_length_buf * self.dt) % 2.5
+        # 调整相位计算，基于新的空翻时间段
+        phase = (cycle_time - 0.9).clamp(min=0, max=0.5)
 
         # 使用优化后的四元数生成函数
         quat_pitch = quat_from_angle_axis(angle=4 * phase * torch.pi,axis=torch.tensor([0, 1, 0], device=self.device, dtype=torch.float))
@@ -679,15 +632,28 @@ class Lite3Skill(LeggedRobot):
         return orientation_diff
 
     def _reward_feet_height_before_backflip(self):
-        current_time = self.episode_length_buf * self.dt
+        # current_time = self.episode_length_buf * self.dt
+        # foot_height = (self.foot_positions[:, :, 2]).view(self.num_envs, -1) - 0.02
+        # return foot_height.clamp(min=0).sum(dim=1) * (current_time < 0.5)
+
+        cycle_time = (self.episode_length_buf * self.dt) % 2.5
         foot_height = (self.foot_positions[:, :, 2]).view(self.num_envs, -1) - 0.02
-        return foot_height.clamp(min=0).sum(dim=1) * (current_time < 0.5)
+        # 调整为新的准备阶段时间(0-0.9)
+        return foot_height.clamp(min=0).sum(dim=1) * (cycle_time < 0.9)
 
     def _reward_height_control(self):
         # Penalize non flat base orientation
-        current_time = self.episode_length_buf * self.dt
-        target_height = 0.3
-        height_diff = torch.square(target_height - self.root_states[:, 2]) * torch.logical_or(current_time < 0.4, current_time > 1.4)
+        # current_time = self.episode_length_buf * self.dt
+        # target_height = 0.36
+        # height_diff = torch.square(target_height - self.root_states[:, 2]) * torch.logical_or(current_time < 0.4, current_time > 1.4)
+        # return height_diff
+        cycle_time = (self.episode_length_buf * self.dt) % 2.5
+        target_height = 0.36
+        # 调整为新的准备阶段(0-0.8)和空翻后期(1.4-1.8)
+        height_diff = torch.square(target_height - self.root_states[:, 2]) * torch.logical_or(
+            cycle_time < 0.8,  # 准备阶段
+            cycle_time > 1.8  # 空翻后期
+        )
         return height_diff
 
     def _reward_actions_symmetry(self):

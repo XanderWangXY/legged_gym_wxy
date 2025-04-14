@@ -33,8 +33,8 @@ from legged_gym.envs.lite3.lite3_config import Lite3RoughCfgPPO
 
 class Lite3SkillCfg( LeggedRobotCfg ):
     class env(LeggedRobotCfg.env):
-        num_observations = 45+6#235-187
-        num_privileged_obs = 36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        num_observations = 45+3#235-187
+        num_privileged_obs = 36+3+1+3+4+4+1 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
         num_envs = 4096
 
@@ -151,7 +151,7 @@ class Lite3SkillCfg( LeggedRobotCfg ):
             dof_acc = 0.#-2.5e-7
             base_height = -0.
             feet_air_time = 0.#0.0
-            collision = 0.#-20.
+            collision = -15.
             feet_stumble = -0.0
             #action_rate = -0.01
             stand_still = -0.
@@ -227,7 +227,7 @@ class Lite3SkillCfgPPO( Lite3RoughCfgPPO ):
         num_learning_epochs = 1
 
     class runner( Lite3RoughCfgPPO.runner ):
-        max_iterations = 15000  # number of policy updates
+        max_iterations = 20000  # number of policy updates
         run_name = ''
         experiment_name = 'skill_lite3'
         description = 'test'
