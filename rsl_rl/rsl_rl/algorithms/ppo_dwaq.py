@@ -124,7 +124,7 @@ class PPO_DWAQ:
         last_values = self.actor_critic.evaluate(torch.cat((last_critic_obs, last_critic_privileged_obs),dim=-1)).detach()
         self.storage.compute_returns(last_values, self.gamma, self.lam)
 
-    def update(self,beta=5):
+    def update(self,beta=1):
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_autoenc_loss = 0

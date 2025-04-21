@@ -110,7 +110,7 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
 
         # Easy ranges
         class max_ranges:
-            lin_vel_x = [0.3, 0.8] # min max [m/s]
+            lin_vel_x = [0.3, 1.2] # min max [m/s]
             lin_vel_y = [-0.3, 0.3]#[0.15, 0.6]   # min max [m/s]
             ang_vel_yaw = [-0, 0]    # min max [rad/s]
             heading = [-1.6, 1.6]
@@ -178,13 +178,16 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
             ang_vel_xy = -0.05
             orientation = -1.
             dof_acc = -2.5e-7
+            joint_power = -2e-5
             collision = -10.
-            action_rate = -0.1
-            delta_torques = -1.0e-7
-            torques = -0.00001
-            hip_pos = -0.5
-            dof_error = -0.04
-            feet_stumble = -1
+            action_rate = -0.01
+            smoothness = -0.01
+
+            delta_torques = 0.#-1.0e-7
+            torques = 0.#-0.00001
+            hip_pos = 0.#-0.5
+            dof_error = 0.#-0.04
+            feet_stumble = 0.#-1
             feet_edge = 0.#-1
 
     class student:

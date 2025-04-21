@@ -259,6 +259,7 @@ class Lite3Parkour(BaseTask):
         self.compute_observations()  # in some cases a simulation step might be required to refresh some obs (for example body positions)
         if self.num_privileged_obs is not None:
             self.compute_privileged_observations()
+        self.last_last_actions[:] = self.last_actions[:]
         self.last_actions[:] = self.actions[:]
         self.last_dof_vel[:] = self.dof_vel[:]
         self.last_torques[:] = self.torques[:]
@@ -315,6 +316,7 @@ class Lite3Parkour(BaseTask):
 
         # reset buffers
         self.last_actions[env_ids] = 0.
+        self.last_last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
         self.last_torques[env_ids] = 0.
         self.last_root_vel[:] = 0.
@@ -786,6 +788,7 @@ class Lite3Parkour(BaseTask):
         self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
         self.last_torques = torch.zeros_like(self.torques)
         self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
@@ -1244,7 +1247,8 @@ class Lite3Parkour(BaseTask):
         return torch.sum(1.*(torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
 
     def _reward_action_rate(self):
-        return torch.norm(self.last_actions - self.actions, dim=1)
+        #return torch.norm(self.last_actions - self.actions, dim=1)
+        return torch.sum(torch.square(self.last_actions - self.actions), dim=1)
 
     def _reward_delta_torques(self):
         return torch.sum(torch.square(self.torques - self.last_torques), dim=1)
@@ -1274,4 +1278,11 @@ class Lite3Parkour(BaseTask):
 
         self.feet_at_edge = self.contact_filt & feet_at_edge
         rew = (self.terrain_levels > 3) * torch.sum(self.feet_at_edge, dim=-1)
+        return rew
+
+    def _reward_joint_power(self):
+        return torch.sum((torch.abs(self.dof_vel)*torch.abs(self.torques)),dim=1)
+
+    def _reward_smoothness(self):
+        rew = torch.sum(torch.square(self.actions - 2 * self.last_actions + self.last_last_actions), dim=1)
         return rew
