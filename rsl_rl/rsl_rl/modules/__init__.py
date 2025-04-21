@@ -30,3 +30,4 @@
 
 from .actor_critic import ActorCritic
 from .actor_critic_recurrent import ActorCriticRecurrent
+from .actor_critic_dwaq import ActorCritic_DWAQ

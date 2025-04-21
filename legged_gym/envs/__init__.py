@@ -44,7 +44,10 @@ from .lite3.lite3_amp import Lite3AMP
 from .lite3.lite3_handstand_config import Lite3HandStandCfg, Lite3FootStandCfg
 from .lite3.lite3_skill import Lite3Skill
 from .lite3.lite3_skill_config import Lite3SkillCfg, Lite3SkillCfgPPO
-
+from .lite3.lite3_parkour import Lite3Parkour
+from .lite3.lite3_parkour_config import Lite3ParkourCfg, Lite3ParkourCfgPPO
+from .lite3.lite3_dreamwaq import Lite3DreamWaQ
+from .lite3.lite3_dreamwaq_config import Lite3DreamWaQCfg, Lite3DreamWaQCfgPPO
 
 import os
 
@@ -60,3 +63,5 @@ task_registry.register( "lite3amp", Lite3AMP, Lite3AMPCfg(), Lite3AMPCfgPPO() )
 task_registry.register( "lite3skill", Lite3Skill, Lite3SkillCfg(), Lite3SkillCfgPPO() )
 task_registry.register( "lite3handstand", Lite3Skill, Lite3HandStandCfg(), Lite3SkillCfgPPO() )
 task_registry.register( "lite3footstand", Lite3Skill, Lite3FootStandCfg(), Lite3SkillCfgPPO() )
+task_registry.register( "lite3parkour", Lite3Parkour, Lite3ParkourCfg(), Lite3ParkourCfgPPO() )
+task_registry.register( "lite3dreamwaq", Lite3DreamWaQ, Lite3DreamWaQCfg(), Lite3DreamWaQCfgPPO() )

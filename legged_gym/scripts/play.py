@@ -59,6 +59,8 @@ def play(args):
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
     if env_cfg.student.student is not None and env_cfg.student.student:
         policy = ppo_runner.alg.get_student_inference_policy(device=env.device)  #####
+    elif 'dream' in env.env.task_name:
+        policy = ppo_runner.get_inference_policy(device=env.device)
     else:
         policy = ppo_runner.get_expert_policy(device=env.device)  #####
     
@@ -86,6 +88,8 @@ def play(args):
         with torch.no_grad():
             if env_cfg.student.student is not None and env_cfg.student.student:
                 actions,_ = policy(obs, obs_history)##########
+            elif 'dream' in env.env.task_name:
+                actions = policy(obs, obs_history)
             else:
                 actions, _ = policy(obs, privileged_obs)  ##########
             # print(actions[0])

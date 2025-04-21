@@ -223,7 +223,12 @@ class PPO:
                 for epoch in range(self.num_adaptation_module_substeps):
                     adaptation_pred = self.actor_critic.adaptation_module(obs_history_batch)
                     with torch.no_grad():
-                        adaptation_target = self.actor_critic.env_factor_encoder(privileged_obs_batch)
+                        if self.actor_critic.terrain_hidden_dims is not None:
+                            terrain_latent_target = self.actor_critic.terrain_encoder(privileged_obs_batch[:,:self.actor_critic.terrain_input_dims])
+                            env_latent_target = self.actor_critic.env_factor_encoder(privileged_obs_batch[:,self.actor_critic.terrain_input_dims:])
+                            adaptation_target = torch.cat((terrain_latent_target,env_latent_target),dim=-1)
+                        else:
+                            adaptation_target = self.actor_critic.env_factor_encoder(privileged_obs_batch)
                         # residual = (adaptation_target - adaptation_pred).norm(dim=1)
 
                     adaptation_loss = F.mse_loss(adaptation_pred, adaptation_target)

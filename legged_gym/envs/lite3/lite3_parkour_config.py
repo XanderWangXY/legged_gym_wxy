@@ -30,12 +30,36 @@
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
-class Lite3FootStandCfg( LeggedRobotCfg ):
+class Lite3ParkourCfg( LeggedRobotCfg ):
     class env(LeggedRobotCfg.env):
         num_observations = 45#235-187
-        num_privileged_obs = 36+3+1+3+4+4+1 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        n_scan = 187
+        num_privileged_obs = 187+36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
         num_envs = 4096
+
+    class depth:
+        use_camera = False
+        camera_num_envs = 192
+        camera_terrain_num_rows = 10
+        camera_terrain_num_cols = 20
+
+        position = [0.27, 0, 0.03]  # front camera
+        angle = [-5, 5]  # positive pitch down
+
+        update_interval = 5  # 5 works without retraining, 8 worse
+
+        original = (106, 60)
+        resized = (87, 58)
+        horizontal_fov = 87
+        buffer_len = 2
+
+        near_clip = 0
+        far_clip = 2
+        dis_noise = 0.0
+
+        scale = 1
+        invert = True
 
     class init_state( LeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.36]  # x,y,z [m]
@@ -57,23 +81,55 @@ class Lite3FootStandCfg( LeggedRobotCfg ):
         }
 
     class terrain( LeggedRobotCfg.terrain ):
-        mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
+        mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
         # rough terrain only:
-        measure_heights = False
+        measure_heights = True
         num_rows= 10 # number of terrain rows (levels)
         num_cols = 20 # number of terrain cols (types)
         # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
-        terrain_proportions = [0.1, 0.1, 0.35, 0.25, 0.2]
+        # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete,梅花桩，沟壑，墙]
+        terrain_proportions = [0., 0.1, 0.1, 0.1, 0.1, 0., 0.3, 0.3]
         # trimesh only:
         slope_treshold = 0.75 # slopes above this threshold will be corrected to vertical surfaces
+
+    class commands:
+        curriculum = False
+        max_curriculum = 1.
+        num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        resampling_time = 6. # time before command are changed[s]
+        heading_command = True # if true: compute ang vel command from heading error
+
+        lin_vel_clip = 0.2
+        ang_vel_clip = 0.4
+        # Easy ranges
+        class ranges:
+            lin_vel_x = [0., 1.5] # min max [m/s]
+            lin_vel_y = [0.0, 0.0]   # min max [m/s]
+            ang_vel_yaw = [0, 0]    # min max [rad/s]
+            heading = [0, 0]
+
+        # Easy ranges
+        class max_ranges:
+            lin_vel_x = [0.3, 0.8] # min max [m/s]
+            lin_vel_y = [-0.3, 0.3]#[0.15, 0.6]   # min max [m/s]
+            ang_vel_yaw = [-0, 0]    # min max [rad/s]
+            heading = [-1.6, 1.6]
+
+        class crclm_incremnt:
+            lin_vel_x = 0.1 # min max [m/s]
+            lin_vel_y = 0.1  # min max [m/s]
+            ang_vel_yaw = 0.1    # min max [rad/s]
+            heading = 0.5
+
+        waypoint_delta = 0.7
 
     class domain_rand(LeggedRobotCfg.domain_rand):
         randomize_friction = True
         friction_range = [0.1, 1.25]
         randomize_base_mass = True
-        added_mass_range = [-1., 5.]
+        added_mass_range = [-1., 3.]
         randomize_com_offset = True
-        com_offset_range = [[-0.05, 0.10], [-0.03, 0.03], [-0.10, 0.10]]
+        com_offset_range = [[-0.05, 0.01], [-0.03, 0.03], [-0.03, 0.03]]
         randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         randomize_Kp_factor = True
@@ -100,106 +156,71 @@ class Lite3FootStandCfg( LeggedRobotCfg ):
         penalize_contacts_on = ["THIGH", "SHANK"]
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
         terminate_after_contacts_on = ["TORSO"]
-        self_collisions = 0  # 1 to disable, 0 to enable...bitwise filter
+        self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter
         restitution_mean = 0.5
         restitution_offset_range = [-0.1, 0.1]
         compliance = 0.5
   
     class rewards( LeggedRobotCfg.rewards ):
-        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
-        tracking_sigma = 0.25  # tracking reward = exp(-error^2/sigma)
-        soft_dof_pos_limit = 5.  # percentage of urdf limits, values above this limit are penalized
-        soft_dof_vel_limit = 1.
-        soft_torque_limit = 29.
-        base_height_target = 0.42
-        max_contact_force = 100.
+        soft_dof_pos_limit = 0.9
+        base_height_target = 0.25
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = -0.0
-            tracking_lin_vel_skill = 3.  # 20.0
-            tracking_ang_vel_skill = 1.5  # 6.66
-            tracking_lin_vel = 0.0
-            tracking_ang_vel = 0.
-            lin_vel_z = -0.0
-            ang_vel_xy = -0.0
-            orientation = -0.0
-            torques = -0.0002
-            torque_limits = -1
+            tracking_lin_vel = 1.5
+            tracking_ang_vel = 0.5
             dof_vel = -0.
-            dof_acc = -2.5e-7
-            base_height = 0.#-0.5
+            base_height = -0.
             feet_air_time = 0.0
-            collision = -2.
-            feet_stumble = -0.0
-            action_rate = -0.03
             stand_still = -0.
-            handstand_feet_height_exp = 10.0
-            handstand_feet_on_air = 1.0
-            handstand_feet_air_time = 1.0
-            handstand_orientation_l2 = -2.5
-            hipy_angle_threshold = 0.5
-            #both_feet_air = -1.0
 
-    class commands:
-        curriculum = False
-        max_curriculum = 1.
-        num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
-        resampling_time = 10. # time before command are changed[s]
-        heading_command = True # if true: compute ang vel command from heading error
-        class ranges:
-            lin_vel_x = [-0.8, 0.8] # min max [m/s]
-            lin_vel_y = [-0.8, 0.8]   # min max [m/s]
-            ang_vel_yaw = [-1, 1]    # min max [rad/s]
-            heading = [-3.14, 3.14]
-
-    class params:  # 参数单独放在params类中
-        handstand_feet_height_exp = {
-            "target_height": 0.73,
-            "std": 0.5
-        }
-        handstand_orientation_l2 = {
-            "target_gravity": [-0.999, 0., -0.035]
-        }
-        handstand_feet_air_time = {
-            "threshold": 5.0
-        }
-        feet_name_reward={
-            "feet_name" : "F.*_FOOT"
-        }
-        hip_name_reward={
-            "hipy_name" : "F.*_HipY_joint"
-        }
-        jump_height_goal={
-            "jump_height_goal":0.7,
-            "std": 0.25
-        }
-        epsilon_h = {
-            "epsilon_h": 0.08
-        }
-
+            # regularization rewards
+            lin_vel_z = -1.0
+            ang_vel_xy = -0.05
+            orientation = -1.
+            dof_acc = -2.5e-7
+            collision = -10.
+            action_rate = -0.1
+            delta_torques = -1.0e-7
+            torques = -0.00001
+            hip_pos = -0.5
+            dof_error = -0.04
+            feet_stumble = -1
+            feet_edge = 0.#-1
 
     class student:
         student = False
         num_envs = 192
 
-    class skill_commands:
-        num_skill_commands = 3
+class Lite3ParkourCfgPPO( LeggedRobotCfgPPO ):
+    class policy(LeggedRobotCfgPPO.policy):
+        terrain_hidden_dims = [512, 256, 128]
+        terrain_input_dims = 187
+        terrain_latent_dims = 36
+        encoder_latent_dims = 12
+    class algorithm( LeggedRobotCfgPPO.algorithm ):
+        entropy_coef = 0.01
+        student = False
+        dagger_beta = 1.0
+        num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
 
-class Lite3HandStandCfg( Lite3FootStandCfg ):
-    class rewards(Lite3FootStandCfg.rewards):
-        base_height_target = 0.42
-        class scales( Lite3FootStandCfg.rewards.scales ):
-            handstand_feet_height_exp = 10.0
-            action_rate = -0.05
-            hipy_angle_threshold = 0.
+    class depth_encoder:
+        if_depth = Lite3ParkourCfg.depth.use_camera
+        depth_shape = Lite3ParkourCfg.depth.resized
+        buffer_len = Lite3ParkourCfg.depth.buffer_len
+        hidden_dims = 512
+        learning_rate = 1.e-3
+        num_steps_per_env = Lite3ParkourCfg.depth.update_interval * 24
 
-    class params(Lite3FootStandCfg.params):
-        handstand_feet_height_exp = {
-            "target_height": 0.70,
-            "std": 0.5
-        }
-        handstand_orientation_l2 = {
-            "target_gravity": [0.999, 0., -0.035]
-        }
-        feet_name_reward = {
-            "feet_name": "H.*_FOOT"
-        }
+    class student:
+        num_mini_batches = 6  # mini batch size = num_envs*nsteps / nminibatches
+        num_steps_per_env = 120
+        num_learning_epochs = 1
+
+    class runner( LeggedRobotCfgPPO.runner ):
+        max_iterations = 15000  # number of policy updates
+        run_name = ''
+        experiment_name = 'parkour_lite3'
+        description = 'test'
+        num_steps_per_env = 24
+
+  

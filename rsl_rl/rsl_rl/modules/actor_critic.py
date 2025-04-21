@@ -189,8 +189,11 @@ class ActorCritic(nn.Module):
                         critic_hidden_dims=[256, 256, 256],
                         encoder_hidden_dims=[512, 256],
                         adaptation_hidden_dims=[256, 32],
+                        terrain_hidden_dims=None,
                         activation='elu',
                         init_noise_std=1.0,
+                        terrain_input_dims=187,
+                        terrain_latent_dims=36,
                         encoder_latent_dims=36,
                         adaptation_rnn_hidden_size=256,  # 新增
                         adaptation_rnn_num_layers=1,  # 新增
@@ -200,10 +203,32 @@ class ActorCritic(nn.Module):
         super(ActorCritic, self).__init__()
 
         activation = get_activation(activation)
+        
+        env_encoder_input = num_privileged_obs
+        adaptation_output = encoder_latent_dims
+        self.terrain_hidden_dims = terrain_hidden_dims
+        self.terrain_latent_dims = terrain_latent_dims
+        self.terrain_input_dims = terrain_input_dims
+        
+        if terrain_hidden_dims is not None:
+            terrain_encoder_layers = []
+            terrain_encoder_layers.append(nn.Linear(terrain_input_dims, terrain_hidden_dims[0]))
+            terrain_encoder_layers.append(activation)
+            for l in range(len(terrain_hidden_dims)):
+                if l == len(terrain_hidden_dims) - 1:
+                    terrain_encoder_layers.append(nn.Linear(terrain_hidden_dims[l], terrain_latent_dims))
+                else:
+                    terrain_encoder_layers.append(nn.Linear(terrain_hidden_dims[l], terrain_hidden_dims[l + 1]))
+                    terrain_encoder_layers.append(activation)
+            self.terrain_encoder = nn.Sequential(*terrain_encoder_layers)
+            self.add_module(f"encoder", self.terrain_encoder)
+
+            env_encoder_input = num_privileged_obs - terrain_input_dims
+            adaptation_output = encoder_latent_dims + terrain_latent_dims
 
         # Env factor encoder
         env_encoder_layers = []
-        env_encoder_layers.append(nn.Linear(num_privileged_obs, encoder_hidden_dims[0]))
+        env_encoder_layers.append(nn.Linear(env_encoder_input, encoder_hidden_dims[0]))
         env_encoder_layers.append(activation)
         for l in range(len(encoder_hidden_dims)):
             if l == len(encoder_hidden_dims) - 1:
@@ -239,12 +264,14 @@ class ActorCritic(nn.Module):
             activation_fn=activation,
             input_size=num_actor_obs,  # 输入维度为单个观察的维度
             tsteps=int(num_obs_history/num_actor_obs),  # 可以根据需要设置时间步长
-            output_size=encoder_latent_dims,  # 输出维度与encoder_latent_dims一致
+            output_size=adaptation_output,  # 输出维度与encoder_latent_dims一致
             tanh_encoder_output=False
         )
         self.add_module(f"adaptation_module", self.adaptation_module)
 
         latent_dim = int(torch.tensor(encoder_latent_dims))
+        if terrain_hidden_dims is not None:
+            latent_dim = int(torch.tensor(encoder_latent_dims + terrain_latent_dims))
 
         mlp_input_dim_a = num_actor_obs + latent_dim
         mlp_input_dim_c = num_critic_obs + latent_dim
@@ -277,7 +304,8 @@ class ActorCritic(nn.Module):
         print(f"Adaptation Module: {self.adaptation_module}")
         print(f"Actor MLP: {self.actor}")
         print(f"Critic MLP: {self.critic}")
-
+        if terrain_hidden_dims is not None:
+            print(f"Terrain Encoder: {self.terrain_encoder}")
         # Action noise
         self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
         self.distribution = None
@@ -314,7 +342,12 @@ class ActorCritic(nn.Module):
         return self.distribution.entropy().sum(dim=-1)
 
     def update_distribution(self, observations, privileged_observations):
-        latent = self.env_factor_encoder(privileged_observations)
+        if self.terrain_hidden_dims is not None:
+            terrain_latent = self.terrain_encoder(privileged_observations[:,:self.terrain_input_dims])
+            env_latent = self.env_factor_encoder(privileged_observations[:,self.terrain_input_dims:])
+            latent = torch.cat((terrain_latent, env_latent), dim=-1)
+        else:
+            latent = self.env_factor_encoder(privileged_observations)
         mean = self.actor(torch.cat((observations, latent), dim=-1))
         self.distribution = Normal(mean, mean * 0. + self.std)
 
@@ -326,14 +359,24 @@ class ActorCritic(nn.Module):
         return self.distribution.log_prob(actions).sum(dim=-1)
 
     def act_expert(self, observations, privileged_observations, policy_info={}):
-        latent = self.env_factor_encoder(privileged_observations)
+        if self.terrain_hidden_dims is not None:
+            terrain_latent = self.terrain_encoder(privileged_observations[:,:self.terrain_input_dims])
+            env_latent = self.env_factor_encoder(privileged_observations[:,self.terrain_input_dims:])
+            latent = torch.cat((terrain_latent, env_latent), dim=-1)
+        else:
+            latent = self.env_factor_encoder(privileged_observations)
         actions_mean = self.actor(torch.cat((observations, latent), dim=-1))
         policy_info["latents"] = latent.detach().cpu().numpy()
         return actions_mean, latent
 
     def act_inference(self, observations, observation_history, privileged_observations=None, policy_info={}):
         if privileged_observations is not None:
-            latent = self.env_factor_encoder(privileged_observations)
+            if self.terrain_hidden_dims is not None:
+                terrain_latent = self.terrain_encoder(privileged_observations[:, :self.terrain_input_dims])
+                env_latent = self.env_factor_encoder(privileged_observations[:, self.terrain_input_dims:])
+                latent = torch.cat((terrain_latent, env_latent), dim=-1)
+            else:
+                latent = self.env_factor_encoder(privileged_observations)
             policy_info["gt_latents"] = latent.detach().cpu().numpy()
 
         latent = self.adaptation_module(observation_history)
@@ -343,7 +386,12 @@ class ActorCritic(nn.Module):
 
     def act_student_inference(self, observations, observation_history, privileged_observations=None, policy_info={}):
         if privileged_observations is not None:
-            latent = self.env_factor_encoder(privileged_observations)
+            if self.terrain_hidden_dims is not None:
+                terrain_latent = self.terrain_encoder(privileged_observations[:, :self.terrain_input_dims])
+                env_latent = self.env_factor_encoder(privileged_observations[:, self.terrain_input_dims:])
+                latent = torch.cat((terrain_latent, env_latent), dim=-1)
+            else:
+                latent = self.env_factor_encoder(privileged_observations)
             policy_info["gt_latents"] = latent.detach().cpu().numpy()
 
         latent = self.student_adaptation(observation_history)
@@ -362,7 +410,12 @@ class ActorCritic(nn.Module):
         Returns:
             Tensor: The value estimates.
         """
-        latent = self.env_factor_encoder(privileged_observations)
+        if self.terrain_hidden_dims is not None:
+            terrain_latent = self.terrain_encoder(privileged_observations[:, :self.terrain_input_dims])
+            env_latent = self.env_factor_encoder(privileged_observations[:, self.terrain_input_dims:])
+            latent = torch.cat((terrain_latent, env_latent), dim=-1)
+        else:
+            latent = self.env_factor_encoder(privileged_observations)
         value = self.critic(torch.cat((critic_observations, latent), dim=-1))
         return value
 
