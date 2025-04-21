@@ -124,7 +124,7 @@ class PPO_DWAQ:
         last_values = self.actor_critic.evaluate(torch.cat((last_critic_obs, last_critic_privileged_obs),dim=-1)).detach()
         self.storage.compute_returns(last_values, self.gamma, self.lam)
 
-    def update(self,beta=1):
+    def update(self,beta=5):
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_autoenc_loss = 0
@@ -166,8 +166,8 @@ class PPO_DWAQ:
                 decode_target = obs_batch
                 vel_target.requires_grad = False
                 decode_target.requires_grad = False
-                autoenc_loss = (nn.MSELoss()(code_vel,vel_target) + nn.MSELoss()(decode,decode_target) + beta*(-0.5 * torch.sum(1 + logvar_latent - mean_latent.pow(2) - logvar_latent.exp())))/self.num_mini_batches
-                autoenc_loss = torch.clamp(autoenc_loss, max=1500.0)
+                kl_loss = torch.mean(-0.5 * torch.sum((1 + logvar_latent - mean_latent.pow(2) - logvar_latent.exp()),dim=-1))
+                autoenc_loss = (nn.MSELoss()(code_vel,vel_target) + nn.MSELoss()(decode,decode_target) + beta*kl_loss)/self.num_mini_batches
                 # estimation_loss = (code[:,0:3] - prev_critic_obs_batch[:,45:48]).pow(2).mean()
                 # reconst_loss = (decode - obs_batch).pow(2).mean()
                 # latent_loss = beta*(-0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()))/mean.shape[0]
