@@ -474,7 +474,7 @@ class Lite3ParkourCfgPPO( LeggedRobotCfgPPO ):
     class runner( LeggedRobotCfgPPO.runner ):
         max_iterations = 15000  # number of policy updates
         run_name = ''
-        experiment_name = 'parkour_lite3'
+        experiment_name = 'lite3_pie'
         description = 'test'
         num_steps_per_env = 24
 
