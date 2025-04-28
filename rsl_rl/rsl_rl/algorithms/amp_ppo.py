@@ -116,7 +116,7 @@ class AMPPPO:
 
     def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape):
         self.storage = RolloutStorage(
-            num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape, self.device)
+            num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape,None, self.device)
 
     def test_mode(self):
         self.actor_critic.test()
@@ -188,7 +188,7 @@ class AMPPPO:
         for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
 
                 obs_batch, critic_obs_batch, privileged_obs_batch, obs_history_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
-                    old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch = sample
+                    old_mu_batch, old_sigma_batch,_,_,_,_,_, hid_states_batch, masks_batch = sample
                 aug_obs_batch = obs_batch.detach()
                 self.actor_critic.act(aug_obs_batch, privileged_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
                 actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)

@@ -36,6 +36,7 @@ from copy import deepcopy
 
 from rsl_rl.modules import ActorCritic
 from rsl_rl.storage import RolloutStorage
+from rsl_rl.utils import unpad_trajectories
 
 
 class RNNAdaptationModule(nn.Module):
@@ -65,6 +66,8 @@ class PPO:
     actor_critic: ActorCritic
     def __init__(self,
                  actor_critic,
+                 depth_encoder = None,
+                 depth_encoder_paras= None,
                  num_learning_epochs=1,
                  num_mini_batches=1,
                  clip_param=0.2,
@@ -108,14 +111,24 @@ class PPO:
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
         self.num_adaptation_module_substeps = num_adaptation_module_substeps
+        self.if_depth = depth_encoder != None
         if student:
             self.student_adaptation = deepcopy(actor_critic.adaptation_module)
             self.student_adaptation_optimizer = optim.Adam(self.student_adaptation.parameters())
             self.student_actor = deepcopy(actor_critic.actor)
             self.student_actor_optimizer = optim.Adam([*self.student_actor.parameters(), *self.student_adaptation.parameters()])
+            if self.if_depth:
+                self.depth_encoder = depth_encoder
+                self.depth_encoder_optimizer = optim.Adam(self.depth_encoder.parameters(),lr=depth_encoder_paras["learning_rate"])
+                self.depth_encoder_paras = depth_encoder_paras
+                self.student_actor_optimizer = optim.Adam(
+                    [*self.student_actor.parameters(), *self.student_adaptation.parameters(), *self.depth_encoder.parameters()], lr=depth_encoder_paras["learning_rate"])
+        if self.if_depth:
+            self.depth_encoder = depth_encoder
+            self.depth_encoder_optimizer = optim.Adam(self.depth_encoder.parameters(),lr=depth_encoder_paras["learning_rate"])
 
-    def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape):
-        self.storage = RolloutStorage(num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape, self.device)
+    def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape, depth_image_shape=None):
+        self.storage = RolloutStorage(num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape, depth_image_shape, self.device)
 
     def test_mode(self):
         self.actor_critic.test()
@@ -123,12 +136,11 @@ class PPO:
     def train_mode(self):
         self.actor_critic.train()
 
-    def act(self, obs, critic_obs, privileged_obs, obs_history):
+    def act(self, obs, critic_obs, privileged_obs, obs_history, depth_image = None):
         if self.actor_critic.is_recurrent:
             self.transition.hidden_states = self.actor_critic.get_hidden_states()
         # Compute the actions and values
         self.transition.actions = self.actor_critic.act(obs, privileged_obs).detach()
-#        self.transition.actions_priv_input = self.actor_critic.act_inference(obs,obs_history).detach()
         self.transition.values = self.actor_critic.evaluate(critic_obs, privileged_obs).detach()
         self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
         self.transition.action_mean = self.actor_critic.action_mean.detach()
@@ -138,7 +150,11 @@ class PPO:
         self.transition.critic_observations = critic_obs
         self.transition.privileged_observations = privileged_obs
         self.transition.observation_histories = obs_history
-        return self.transition.actions#, self.transition.actions_priv_input
+        if self.if_depth:
+            self.transition.depth_image = depth_image
+            self.depth_encoder(depth_image, obs)
+            self.transition.hidden_states = tuple([self.depth_encoder.get_hidden_states()])
+        return self.transition.actions
     
     def process_env_step(self, rewards, dones, infos):
         self.transition.rewards = rewards.clone()
@@ -160,12 +176,17 @@ class PPO:
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_adaptation_loss = 0
+        mean_depth_loss = 0
         if self.actor_critic.is_recurrent:
             generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+        elif self.if_depth:
+            generator = self.storage.depth_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
         else:
             generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
-        for obs_batch, critic_obs_batch, privileged_obs_batch, obs_history_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
-            old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch in generator:
+        for (obs_batch, critic_obs_batch, privileged_obs_batch, obs_history_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
+            old_mu_batch, old_sigma_batch
+             ,depth_image_batch,hidden_states_batch, depth_masks_batch,obs_recurrent_batch, priv_obs_recurrent_batch
+             , hid_states_batch, masks_batch) in generator:
 
 
                 self.actor_critic.act(obs_batch, privileged_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
@@ -227,6 +248,10 @@ class PPO:
                             terrain_latent_target = self.actor_critic.terrain_encoder(privileged_obs_batch[:,:self.actor_critic.terrain_input_dims])
                             env_latent_target = self.actor_critic.env_factor_encoder(privileged_obs_batch[:,self.actor_critic.terrain_input_dims:])
                             adaptation_target = torch.cat((terrain_latent_target,env_latent_target),dim=-1)
+                            if self.if_depth:
+                                adaptation_target = env_latent_target
+                            if self.actor_critic.parkour:
+                                adaptation_target = env_latent_target
                         else:
                             adaptation_target = self.actor_critic.env_factor_encoder(privileged_obs_batch)
                         # residual = (adaptation_target - adaptation_pred).norm(dim=1)
@@ -238,37 +263,21 @@ class PPO:
                     self.adaptation_optimizer.step()
 
                     mean_adaptation_loss += adaptation_loss.item()
-                # Adaptation module gradient step - RNN版本
-                # for epoch in range(self.num_adaptation_module_substeps):
-                #     batch_size = obs_history_batch.shape[0]
-                #     obs_dim = self.actor_critic.adaptation_module.obs_dim
-                #
-                #     # 计算历史步数
-                #     history_steps = obs_history_batch.shape[1] // obs_dim
-                #
-                #     # 将扁平的历史观察重塑为序列形式 [batch_size, history_steps*obs_dim] -> [batch_size, history_steps, obs_dim]
-                #     obs_sequence = obs_history_batch.view(batch_size, history_steps, obs_dim)
-                #
-                #     # 使用process_sequence方法一次性处理整个序列
-                #     adaptation_pred, _ = self.actor_critic.adaptation_module.process_sequence(obs_sequence)
-                #
-                #     with torch.no_grad():
-                #         adaptation_target = self.actor_critic.env_factor_encoder(privileged_obs_batch)
-                #         # residual = (adaptation_target - adaptation_pred).norm(dim=1)
-                #
-                #     adaptation_loss = F.mse_loss(adaptation_pred, adaptation_target)
-                #
-                #     self.adaptation_optimizer.zero_grad()
-                #     adaptation_loss.backward()
-                #
-                #     # 梯度裁剪以提高RNN训练稳定性
-                #     torch.nn.utils.clip_grad_norm_(
-                #         self.actor_critic.adaptation_module.parameters(),
-                #         max_norm=1.0
-                #     )
-                #
-                #     self.adaptation_optimizer.step()
-                #     mean_adaptation_loss += adaptation_loss.item()
+
+                if self.if_depth:
+                    with torch.no_grad():
+                        terrain_latent_target = self.actor_critic.terrain_encoder(priv_obs_recurrent_batch[:,:,:self.actor_critic.terrain_input_dims])
+                    terrain_latent_target = unpad_trajectories(terrain_latent_target, depth_masks_batch)
+                    depth_latent_pred = self.depth_encoder.forward(depth_image_batch, obs_recurrent_batch, depth_masks_batch, hidden_states_batch)
+                    depth_loss = F.mse_loss(depth_latent_pred, terrain_latent_target)
+
+                    self.depth_encoder_optimizer.zero_grad()
+                    depth_loss.backward()
+                    self.depth_encoder_optimizer.step()
+
+                    mean_depth_loss += depth_loss.item()
+
+
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
         mean_value_loss /= num_updates
@@ -276,7 +285,7 @@ class PPO:
         mean_adaptation_loss /= (num_updates * self.num_adaptation_module_substeps)
         self.storage.clear()
 
-        return mean_value_loss, mean_surrogate_loss, mean_adaptation_loss
+        return mean_value_loss, mean_surrogate_loss, mean_adaptation_loss, mean_depth_loss
 
     def behavioral_cloning(self,
                       actions_student_buffer,
@@ -348,6 +357,56 @@ class PPO:
                             actor_pred = self.student_actor(actor_input)
                             with torch.no_grad():
                                 actor_target,latent_target = self.actor_critic.act_expert(obs_batch, privileged_obs_batch)
+                                # residual = (adaptation_target - adaptation_pred).norm(dim=1)
+                            if 'actor' in which:
+                                actor_loss = F.mse_loss(actor_pred, actor_target)
+
+                                self.student_actor_optimizer.zero_grad()
+                                actor_loss.backward()
+                                torch.nn.utils.clip_grad_norm_(self.student_actor.parameters(), clip_param_supervise)
+                                self.student_actor_optimizer.step()
+
+                                mean_actor_loss += actor_loss.item()
+                            if 'adaptation' in which:
+                                adaptation_loss = F.mse_loss(latent_pred, latent_target)
+
+                                self.student_adaptation_optimizer.zero_grad()
+                                adaptation_loss.backward()
+                                torch.nn.utils.clip_grad_norm_(self.student_adaptation.parameters(), clip_param_supervise)
+                                self.student_adaptation_optimizer.step()
+
+                                mean_adaptation_loss += adaptation_loss.item()
+
+        num_updates = self.num_learning_epochs * self.num_mini_batches
+        mean_actor_loss /= num_updates
+        mean_adaptation_loss /= (num_updates * self.num_adaptation_module_substeps)
+        self.storage.clear()
+
+        return mean_actor_loss, mean_adaptation_loss
+
+    def update_dagger_vision(self,
+                            which = None,
+                            clip_param_supervise=0.2,
+                            ):
+        mean_actor_loss = 0
+        mean_adaptation_loss = 0
+        if self.actor_critic.is_recurrent:
+            generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+        else:
+            generator = self.storage.depth_recurrent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+        for (obs_batch, critic_obs_batch, privileged_obs_batch, obs_history_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
+            old_mu_batch, old_sigma_batch
+             ,depth_image_batch,hidden_states_batch
+             , hid_states_batch, masks_batch) in generator:
+
+                        # Student actor module gradient step
+                        for epoch in range(self.num_adaptation_module_substeps):
+                            latent_pred = self.student_adaptation(obs_history_batch)
+                            depth_latent_pred = self.depth_encoder(depth_image_batch, obs_batch, masks_batch, hidden_states_batch)
+                            actor_input = torch.cat((obs_batch.flatten(0, 1), depth_latent_pred.flatten(0, 1), latent_pred), dim=-1)
+                            actor_pred = self.student_actor(actor_input)
+                            with torch.no_grad():
+                                actor_target,latent_target = self.actor_critic.act_expert(obs_batch.flatten(0, 1), privileged_obs_batch.flatten(0, 1))
                                 # residual = (adaptation_target - adaptation_pred).norm(dim=1)
                             if 'actor' in which:
                                 actor_loss = F.mse_loss(actor_pred, actor_target)

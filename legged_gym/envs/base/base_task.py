@@ -103,6 +103,7 @@ class BaseTask():
                 self.viewer, gymapi.KEY_ESCAPE, "QUIT")
             self.gym.subscribe_viewer_keyboard_event(
                 self.viewer, gymapi.KEY_V, "toggle_viewer_sync")
+            self.lookat_id = 0
 
     def get_observations(self):
         return self.obs_buf

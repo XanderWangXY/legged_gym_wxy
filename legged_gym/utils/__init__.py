@@ -33,3 +33,5 @@ from .task_registry import task_registry
 from .logger import Logger
 from .math import *
 from .terrain import Terrain
+from .my_terrain.terrain import MyTerrain
+from .extreme_terrain import ExtremeTerrain

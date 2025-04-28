@@ -96,6 +96,13 @@ class HistoryWrapper(gym.Wrapper):
                 self.obs_history[reset_env_ids, :] = 0
             self.obs_history = torch.cat((self.obs_history[:, self.env.num_obs:], obs), dim=-1)
             return {'obs': obs, 'privileged_obs': privileged_obs, 'obs_history': self.obs_history}, rew, dones, infos, reset_env_ids, terminal_amp_states
+        elif 'parkour' in self.env.task_name:
+            obs, privileged_obs, rew, dones, infos, depth_buffer = self.env.step(action)
+            reset_env_ids = dones.nonzero(as_tuple=False).flatten()
+            if reset_env_ids is not None:
+                self.obs_history[reset_env_ids, :] = 0
+            self.obs_history = torch.cat((self.obs_history[:, self.env.num_obs:], obs), dim=-1)
+            return {'obs': obs, 'privileged_obs': privileged_obs, 'obs_history': self.obs_history, 'depth_buffer':depth_buffer}, rew, dones, infos
         else:
             obs, privileged_obs, rew, dones, infos = self.env.step(action)
             reset_env_ids = dones.nonzero(as_tuple=False).flatten()

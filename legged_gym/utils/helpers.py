@@ -134,6 +134,10 @@ def update_cfg_from_args(env_cfg, cfg_train, args):
             env_cfg.student.student = args.student
 
             env_cfg.env.num_envs = env_cfg.student.num_envs
+        if args.use_camera is not None:
+            if args.use_camera:
+                env_cfg.depth.use_camera = args.use_camera
+            else: pass
 
     if cfg_train is not None:
         if args.student:
@@ -157,6 +161,11 @@ def update_cfg_from_args(env_cfg, cfg_train, args):
             cfg_train.runner.load_run = args.load_run
         if args.checkpoint is not None:
             cfg_train.runner.checkpoint = args.checkpoint
+        if args.use_camera is not None:
+            if args.use_camera:
+                cfg_train.depth_encoder.if_depth = args.use_camera
+            else: pass
+
 
     return env_cfg, cfg_train
 
@@ -171,6 +180,7 @@ def get_args():
         {"name": "--student", "action": "store_true", "default": False, "help": "To train student"},
         {"name": "--description", "type": str,"help": "description of task"},
         {"name": "--no_wandb", "action": "store_true", "default": False, "help": "Shut down wandb"},
+        {"name": "--use_camera", "action": "store_true", "default": None, "help": "render camera for distillation"},
 
         {"name": "--headless", "action": "store_true", "default": False, "help": "Force display off at all times"},
         {"name": "--horovod", "action": "store_true", "default": False, "help": "Use horovod for multi-gpu training"},

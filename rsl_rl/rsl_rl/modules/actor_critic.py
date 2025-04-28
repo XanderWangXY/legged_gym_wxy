@@ -169,6 +169,8 @@ class StateHistoryEncoder(nn.Module):
 
     def forward(self, obs):
         # nd * T * n_proprio
+        if obs.dim()==3:
+            obs = obs.flatten(0, 1)
         nd = obs.shape[0]
         T = self.tsteps
         # print("obs device", obs.device)
@@ -185,6 +187,8 @@ class ActorCritic(nn.Module):
                         num_obs_history,
                         num_actions,
                         num_privileged_obs=231,
+                        depth_encoder_cfg=None,
+                        if_depth=None,
                         actor_hidden_dims=[256, 256, 256],
                         critic_hidden_dims=[256, 256, 256],
                         encoder_hidden_dims=[512, 256],
@@ -197,6 +201,7 @@ class ActorCritic(nn.Module):
                         encoder_latent_dims=36,
                         adaptation_rnn_hidden_size=256,  # 新增
                         adaptation_rnn_num_layers=1,  # 新增
+                        parkour = False,
                         **kwargs):
         if kwargs:
             print("ActorCritic.__init__ got unexpected arguments, which will be ignored: " + str([key for key in kwargs.keys()]))
@@ -209,6 +214,7 @@ class ActorCritic(nn.Module):
         self.terrain_hidden_dims = terrain_hidden_dims
         self.terrain_latent_dims = terrain_latent_dims
         self.terrain_input_dims = terrain_input_dims
+        self.parkour = parkour
         
         if terrain_hidden_dims is not None:
             terrain_encoder_layers = []
@@ -225,7 +231,10 @@ class ActorCritic(nn.Module):
 
             env_encoder_input = num_privileged_obs - terrain_input_dims
             adaptation_output = encoder_latent_dims + terrain_latent_dims
-
+        if if_depth is not None and if_depth:
+            adaptation_output = encoder_latent_dims
+        if self.parkour:
+            adaptation_output = encoder_latent_dims
         # Env factor encoder
         env_encoder_layers = []
         env_encoder_layers.append(nn.Linear(env_encoder_input, encoder_hidden_dims[0]))
@@ -354,7 +363,7 @@ class ActorCritic(nn.Module):
     def act(self, observations, privileged_observations, **kwargs):
         self.update_distribution(observations, privileged_observations)
         return self.distribution.sample()
-    
+
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1)
 

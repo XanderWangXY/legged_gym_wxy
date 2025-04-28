@@ -83,7 +83,7 @@ class PPO_DWAQ:
         self.use_clipped_value_loss = use_clipped_value_loss
 
     def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape):
-        self.storage = RolloutStorage(num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape, self.device)
+        self.storage = RolloutStorage(num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape,None, self.device)
 
     def test_mode(self):
         self.actor_critic.test()
@@ -133,7 +133,7 @@ class PPO_DWAQ:
         else:
             generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
         for obs_batch, critic_obs_batch, privileged_obs_batch, obs_history_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
-            old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch in generator:
+            old_mu_batch, old_sigma_batch,_,_,_,_,_, hid_states_batch, masks_batch in generator:
 
 
                 self.actor_critic.act(obs_batch, obs_history_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
