@@ -38,7 +38,7 @@ class Lite3PIECfg(LeggedRobotCfg):
         n_scan = 132
         num_privileged_obs = n_scan + 36 + 3 + 1 + 3 + 4 + 4  # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
-        num_envs = 40
+        num_envs = 4096
 
     class depth:
         use_camera = False
