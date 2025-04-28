@@ -31,30 +31,14 @@
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 import numpy as np
 
-class Lite3ParkourCfg( LeggedRobotCfg ):
+
+class Lite3PIECfg(LeggedRobotCfg):
     class env(LeggedRobotCfg.env):
-        num_observations = 45#235-187
+        num_observations = 45  # 235-187
         n_scan = 132
-        num_privileged_obs = n_scan+36+3+1+3+4+4+2 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        num_privileged_obs = n_scan + 36 + 3 + 1 + 3 + 4 + 4  # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
-        num_envs = 4096
-
-        include_foot_contacts = True
-
-        randomize_start_pos = False
-        randomize_start_vel = False
-        randomize_start_yaw = False
-        rand_yaw_range = 1.2
-        randomize_start_y = False
-        rand_y_range = 0.5
-        randomize_start_pitch = False
-        rand_pitch_range = 1.6
-
-        contact_buf_len = 100
-
-        next_goal_threshold = 0.2
-        reach_goal_delay = 0.1
-        num_future_goal_obs = 2
+        num_envs = 40
 
     class depth:
         use_camera = False
@@ -79,7 +63,7 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
         scale = 1
         invert = True
 
-    class init_state( LeggedRobotCfg.init_state ):
+    class init_state(LeggedRobotCfg.init_state):
         pos = [0.0, 0.0, 0.36]  # x,y,z [m]
         default_joint_angles = {  # = target angles [rad] when action = 0.0
             'FL_HipX_joint': 0.0,  # [rad]
@@ -138,7 +122,8 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
         dynamic_friction = 1.0
         restitution = 0.
         measure_heights = True
-        measured_points_x = [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.05, 1.2] # 1mx1.6m rectangle (without center line)
+        measured_points_x = [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.05,
+                             1.2]  # 1mx1.6m rectangle (without center line)
         measured_points_y = [-0.75, -0.6, -0.45, -0.3, -0.15, 0., 0.15, 0.3, 0.45, 0.6, 0.75]
         measure_horizontal_noise = 0.0
 
@@ -177,6 +162,7 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
         origin_zero_z = True
 
         num_goals = 8
+
     # '''parkour'''
     # class terrain:
     #     # selected = "TerrainPerlin"
@@ -322,30 +308,31 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
     class commands:
         curriculum = False
         max_curriculum = 1.
-        num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
-        resampling_time = 6. # time before command are changed[s]
-        heading_command = True # if true: compute ang vel command from heading error
+        num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        resampling_time = 6.  # time before command are changed[s]
+        heading_command = True  # if true: compute ang vel command from heading error
 
         lin_vel_clip = 0.2
         ang_vel_clip = 0.4
+
         # Easy ranges
         class ranges:
-            lin_vel_x = [0., 1.5] # min max [m/s]
-            lin_vel_y = [0.0, 0.0]   # min max [m/s]
-            ang_vel_yaw = [0, 0]    # min max [rad/s]
+            lin_vel_x = [0., 1.5]  # min max [m/s]
+            lin_vel_y = [0.0, 0.0]  # min max [m/s]
+            ang_vel_yaw = [0, 0]  # min max [rad/s]
             heading = [0, 0]
 
         # Easy ranges
         class max_ranges:
-            lin_vel_x = [0.3, 1.2] # min max [m/s]
-            lin_vel_y = [-0.3, 0.3]#[0.15, 0.6]   # min max [m/s]
-            ang_vel_yaw = [-0, 0]    # min max [rad/s]
+            lin_vel_x = [0.3, 1.2]  # min max [m/s]
+            lin_vel_y = [-0.3, 0.3]  # [0.15, 0.6]   # min max [m/s]
+            ang_vel_yaw = [-0, 0]  # min max [rad/s]
             heading = [-1.6, 1.6]
 
         class crclm_incremnt:
-            lin_vel_x = 0.1 # min max [m/s]
+            lin_vel_x = 0.1  # min max [m/s]
             lin_vel_y = 0.1  # min max [m/s]
-            ang_vel_yaw = 0.1    # min max [rad/s]
+            ang_vel_yaw = 0.1  # min max [rad/s]
             heading = 0.5
 
         waypoint_delta = 0.7
@@ -364,17 +351,17 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
         randomize_Kd_factor = True
         Kd_factor_range = [0.8, 1.2]
 
-    class control( LeggedRobotCfg.control ):
+    class control(LeggedRobotCfg.control):
         # PD Drive parameters:
         control_type = 'P'
         stiffness = {'joint': 20.}  # [N*m/rad]
-        damping = {'joint': 0.7}     # [N*m*s/rad]
+        damping = {'joint': 0.7}  # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 4
 
-    class asset( LeggedRobotCfg.asset ):
+    class asset(LeggedRobotCfg.asset):
         file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/lite3/urdf/Lite3.urdf'
         name = "Lite3"
         foot_name = "FOOT"
@@ -387,95 +374,75 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
         restitution_mean = 0.5
         restitution_offset_range = [-0.1, 0.1]
         compliance = 0.5
-  
-    class rewards( LeggedRobotCfg.rewards ):
+
+    class rewards(LeggedRobotCfg.rewards):
         soft_dof_pos_limit = 0.9
         base_height_target = 0.25
-        class scales( LeggedRobotCfg.rewards.scales ):
+
+        class scales(LeggedRobotCfg.rewards.scales):
             termination = -0.0
+            tracking_lin_vel = 1.5
+            tracking_ang_vel = 0.5
             dof_vel = -0.
             base_height = -0.
             feet_air_time = 0.0
             stand_still = -0.
 
-            #pie
-            # tracking_lin_vel = 1.5
-            # tracking_ang_vel = 0.5
-
-            # regularization rewards
-            # lin_vel_z = -1.0
-            # ang_vel_xy = -0.05
-            # orientation = -1.
-            # dof_acc = -2.5e-7
-            # joint_power = -2e-5
-            # collision = -10.
-            # action_rate = -0.01
-            # smoothness = -0.01
-
-            # delta_torques = 0.#-1.0e-7
-            # torques = 0.#-0.00001
-            # hip_pos = 0.#-0.5
-            # dof_error = 0.#-0.04
-            # feet_stumble = 0.#-1
-            # feet_edge = 0.#-1
-
-            #extreme
-            tracking_lin_vel = 0.
-            tracking_ang_vel = 0.
-            # tracking rewards
-            tracking_goal_vel = 1.5
-            tracking_yaw = 0.5
             # regularization rewards
             lin_vel_z = -1.0
             ang_vel_xy = -0.05
             orientation = -1.
             dof_acc = -2.5e-7
+            joint_power = -2e-5
             collision = -10.
-            action_rate = -0.1
-            delta_torques = -1.0e-7
-            torques = -0.00001
-            hip_pos = -0.5
-            dof_error = -0.04
-            feet_stumble = -1
-            feet_edge = -1
+            action_rate = -0.01
+            smoothness = -0.01
+
+            delta_torques = 0.  # -1.0e-7
+            torques = 0.  # -0.00001
+            hip_pos = 0.  # -0.5
+            dof_error = 0.  # -0.04
+            feet_stumble = 0.  # -1
+            feet_edge = 0.  # -1
 
     class student:
         student = False
         num_envs = 12
 
-class Lite3ParkourCfgPPO( LeggedRobotCfgPPO ):
+
+class Lite3PIECfgPPO(LeggedRobotCfgPPO):
     class policy(LeggedRobotCfgPPO.policy):
         terrain_hidden_dims = [512, 256, 128]
-        terrain_input_dims = 132
+        terrain_input_dims = 187
         terrain_latent_dims = 36
         encoder_latent_dims = 12
         parkour = True
-    class algorithm( LeggedRobotCfgPPO.algorithm ):
+
+    class algorithm(LeggedRobotCfgPPO.algorithm):
         entropy_coef = 0.01
         student = False
         dagger_beta = 1.0
         num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
 
     class depth_encoder:
-        if_depth = Lite3ParkourCfg.depth.use_camera
+        if_depth = Lite3PIECfg.depth.use_camera
         depth_shape = (58, 87)
-        buffer_len = Lite3ParkourCfg.depth.buffer_len
+        buffer_len = Lite3PIECfg.depth.buffer_len
         rnn_num_layers = 1
         rnn_type = 'gru'
         hidden_dims = 512
         learning_rate = 1.e-3
-        num_steps_per_env = Lite3ParkourCfg.depth.update_interval * 24
+        num_steps_per_env = Lite3PIECfg.depth.update_interval * 24
 
     class student:
         num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
         num_steps_per_env = 120
         num_learning_epochs = 1
 
-    class runner( LeggedRobotCfgPPO.runner ):
+    class runner(LeggedRobotCfgPPO.runner):
         max_iterations = 15000  # number of policy updates
         run_name = ''
         experiment_name = 'parkour_lite3'
         description = 'test'
         num_steps_per_env = 24
 
-  

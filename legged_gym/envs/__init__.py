@@ -48,6 +48,7 @@ from .lite3.lite3_parkour import Lite3Parkour
 from .lite3.lite3_parkour_config import Lite3ParkourCfg, Lite3ParkourCfgPPO
 from .lite3.lite3_dreamwaq import Lite3DreamWaQ
 from .lite3.lite3_dreamwaq_config import Lite3DreamWaQCfg, Lite3DreamWaQCfgPPO
+from .lite3.lite3_pie import Lite3PIE
 
 import os
 
