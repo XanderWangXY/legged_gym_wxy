@@ -155,11 +155,11 @@ class Lite3Parkour(BaseTask):
         if self.privileged_obs_buf is not None:
             self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
         self.extras["delta_yaw_ok"] = self.delta_yaw < 0.6
-        # if self.cfg.depth.use_camera and self.count % self.cfg.depth.update_interval == 0:
-        #     self.extras["depth"] = self.depth_buffer[:, -2]  # have already selected last one
-        # else:
-        #     self.extras["depth"] = None
-        self.extras["depth"] = self.depth_buffer[:, -2]  # have already selected last one
+        if self.cfg.depth.use_camera and self.count % self.cfg.depth.update_interval == 0:
+            self.extras["depth"] = self.depth_buffer[:, -2]  # have already selected last one
+        else:
+            self.extras["depth"] = None
+        #self.extras["depth"] = self.depth_buffer[:, -2]  # have already selected last one
         return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras, self.extras["depth"]
 
     def normalize_depth_image(self, depth_image):
