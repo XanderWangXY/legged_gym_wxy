@@ -44,8 +44,8 @@ from typing import Tuple, Dict
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs.base.base_task import BaseTask
-from legged_gym.utils.terrain import Terrain
-from legged_gym.utils.my_terrain import get_terrain_cls
+# from legged_gym.utils.terrain import Terrain
+# from legged_gym.utils.my_terrain import get_terrain_cls
 from legged_gym.utils.extreme_terrain import ExtremeTerrain
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
@@ -114,7 +114,6 @@ class Lite3Parkour(BaseTask):
         self._prepare_reward_function()
         self.count = 0
         self.init_done = True
-        self.global_counter = 0
         self.total_env_steps_counter = 0
 
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
@@ -156,10 +155,11 @@ class Lite3Parkour(BaseTask):
         if self.privileged_obs_buf is not None:
             self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
         self.extras["delta_yaw_ok"] = self.delta_yaw < 0.6
-        if self.cfg.depth.use_camera and self.global_counter % self.cfg.depth.update_interval == 0:
-            self.extras["depth"] = self.depth_buffer[:, -2]  # have already selected last one
-        else:
-            self.extras["depth"] = None
+        # if self.cfg.depth.use_camera and self.count % self.cfg.depth.update_interval == 0:
+        #     self.extras["depth"] = self.depth_buffer[:, -2]  # have already selected last one
+        # else:
+        #     self.extras["depth"] = None
+        self.extras["depth"] = self.depth_buffer[:, -2]  # have already selected last one
         return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras, self.extras["depth"]
 
     def normalize_depth_image(self, depth_image):
@@ -184,7 +184,7 @@ class Lite3Parkour(BaseTask):
         if not self.cfg.depth.use_camera:
             return
 
-        if self.global_counter % self.cfg.depth.update_interval != 0:
+        if self.count % self.cfg.depth.update_interval != 0:
             return
         self.gym.step_graphics(self.sim) # required to render in headless mode
         self.gym.render_all_camera_sensors(self.sim)
@@ -442,7 +442,7 @@ class Lite3Parkour(BaseTask):
     def compute_privileged_observations(self):
         """ Computes privileged observations
         """
-        if self.global_counter % 5 == 0:
+        if self.count % 5 == 0:
             self.delta_yaw = self.target_yaw - self.rpy[:, 2]
             self.delta_next_yaw = self.next_target_yaw - self.rpy[:, 2]
         contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
@@ -508,13 +508,13 @@ class Lite3Parkour(BaseTask):
         #self._create_terrain()
         self._create_envs()
 
-    def _create_terrain(self):
-        if getattr(self.cfg.terrain, "selected", None) is None:
-            self._create_ground_plane()
-        else:
-            terrain_cls = self.cfg.terrain.selected
-            self.terrain = get_terrain_cls(terrain_cls)(self.cfg.terrain, self.num_envs)
-            self.terrain.add_terrain_to_sim(self.gym, self.sim, self.device)
+    # def _create_terrain(self):
+    #     if getattr(self.cfg.terrain, "selected", None) is None:
+    #         self._create_ground_plane()
+    #     else:
+    #         terrain_cls = self.cfg.terrain.selected
+    #         self.terrain = get_terrain_cls(terrain_cls)(self.cfg.terrain, self.num_envs)
+    #         self.terrain.add_terrain_to_sim(self.gym, self.sim, self.device)
 
     def set_camera(self, position, lookat):
         """ Set camera position and direction
@@ -642,7 +642,7 @@ class Lite3Parkour(BaseTask):
             self.commands[:, 2] *= torch.abs(self.commands[:, 2]) > self.cfg.commands.ang_vel_clip
 
         if self.cfg.terrain.measure_heights:
-            if self.global_counter % self.cfg.depth.update_interval == 0:
+            if self.count % self.cfg.depth.update_interval == 0:
                 self.measured_heights = self._get_heights()
         if self.cfg.domain_rand.push_robots and  (self.common_step_counter % self.cfg.domain_rand.push_interval == 0):
             self._push_robots()
@@ -1042,7 +1042,9 @@ class Lite3Parkour(BaseTask):
         tm_params.static_friction = self.cfg.terrain.static_friction
         tm_params.dynamic_friction = self.cfg.terrain.dynamic_friction
         tm_params.restitution = self.cfg.terrain.restitution
-        self.gym.add_triangle_mesh(self.sim, self.terrain.vertices.flatten(order='C'), self.terrain.triangles.flatten(order='C'), tm_params)   
+        print("Adding trimesh to simulation...")
+        self.gym.add_triangle_mesh(self.sim, self.terrain.vertices.flatten(order='C'), self.terrain.triangles.flatten(order='C'), tm_params)
+        print("Trimesh added")
         self.height_samples = torch.tensor(self.terrain.heightsamples).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
         self.x_edge_mask = torch.tensor(self.terrain.x_edge_mask).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
 

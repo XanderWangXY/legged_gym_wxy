@@ -69,7 +69,7 @@ class Memory(torch.nn.Module):
             if hidden_states is None:
                 raise ValueError("Hidden states not passed to memory module during policy update")
             out, _ = self.rnn(input, hidden_states)
-            out = unpad_trajectories(out, masks)
+            #out = unpad_trajectories(out, masks)
         else:
             # inference mode (collection): use hidden states of last step
             out, self.hidden_states = self.rnn(input.unsqueeze(0), self.hidden_states)

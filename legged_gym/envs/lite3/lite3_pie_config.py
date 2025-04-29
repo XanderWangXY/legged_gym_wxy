@@ -413,7 +413,7 @@ class Lite3PIECfg(LeggedRobotCfg):
 class Lite3PIECfgPPO(LeggedRobotCfgPPO):
     class policy(LeggedRobotCfgPPO.policy):
         terrain_hidden_dims = [512, 256, 128]
-        terrain_input_dims = 187
+        terrain_input_dims = 132
         terrain_latent_dims = 36
         encoder_latent_dims = 12
         parkour = True
@@ -442,7 +442,7 @@ class Lite3PIECfgPPO(LeggedRobotCfgPPO):
     class runner(LeggedRobotCfgPPO.runner):
         max_iterations = 15000  # number of policy updates
         run_name = ''
-        experiment_name = 'parkour_lite3'
+        experiment_name = 'lite3_pie'
         description = 'test'
         num_steps_per_env = 24
 

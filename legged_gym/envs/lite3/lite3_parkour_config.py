@@ -441,7 +441,7 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
 
     class student:
         student = False
-        num_envs = 12
+        num_envs = 24
 
 class Lite3ParkourCfgPPO( LeggedRobotCfgPPO ):
     class policy(LeggedRobotCfgPPO.policy):
@@ -472,9 +472,9 @@ class Lite3ParkourCfgPPO( LeggedRobotCfgPPO ):
         num_learning_epochs = 1
 
     class runner( LeggedRobotCfgPPO.runner ):
-        max_iterations = 15000  # number of policy updates
+        max_iterations = 50000  # number of policy updates
         run_name = ''
-        experiment_name = 'lite3_pie'
+        experiment_name = 'parkour_lite3'
         description = 'test'
         num_steps_per_env = 24
 
