@@ -125,7 +125,7 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
         vertical_scale = 0.005  # [m]
         border_size = 5  # [m]
         height = [0.02, 0.06]
-        simplify_grid = False
+        simplify_grid = True
         gap_size = [0.02, 0.1]
         stepping_stone_distance = [0.02, 0.08]
         downsampled_scale = 0.075
@@ -148,7 +148,7 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
         terrain_length = 18.
         terrain_width = 4
         num_rows = 10  # number of terrain rows (levels)  # spreaded is benifitiall !
-        num_cols = 40  # number of terrain cols (types)
+        num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {"smooth slope": 0.,
                         "rough slope up": 0.0,
@@ -441,7 +441,7 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
 
     class student:
         student = False
-        num_envs = 24
+        num_envs = 192
 
 class Lite3ParkourCfgPPO( LeggedRobotCfgPPO ):
     class policy(LeggedRobotCfgPPO.policy):
@@ -467,7 +467,7 @@ class Lite3ParkourCfgPPO( LeggedRobotCfgPPO ):
         num_steps_per_env = Lite3ParkourCfg.depth.update_interval * 24
 
     class student:
-        num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
+        num_mini_batches = 1  # mini batch size = num_envs*nsteps / nminibatches
         num_steps_per_env = 120
         num_learning_epochs = 1
 
