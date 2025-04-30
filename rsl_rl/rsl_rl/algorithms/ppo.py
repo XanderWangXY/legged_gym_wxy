@@ -38,6 +38,18 @@ from rsl_rl.modules import ActorCritic
 from rsl_rl.storage import RolloutStorage
 from rsl_rl.utils import unpad_trajectories
 
+def split_tensor_along_dim1(tensor, num_splits):
+    """ 将 tensor 按 dim=1 均匀分成 num_splits 块，不能整除时最后一块大一点 """
+    total_len = tensor.shape[1]
+    chunk_size = total_len // num_splits
+    remainder = total_len % num_splits
+
+    split_sizes = [chunk_size] * num_splits
+    for i in range(remainder):
+        split_sizes[i] += 1
+
+    return torch.split(tensor, split_sizes, dim=1)
+
 
 class RNNAdaptationModule(nn.Module):
     def __init__(self, obs_dim, history_steps, latent_dim, hidden_size=128, num_layers=2, activation=nn.Tanh()):
@@ -112,6 +124,9 @@ class PPO:
         self.use_clipped_value_loss = use_clipped_value_loss
         self.num_adaptation_module_substeps = num_adaptation_module_substeps
         self.if_depth = depth_encoder != None
+        if self.if_depth:
+            self.depth_encoder = depth_encoder
+            self.depth_encoder_optimizer = optim.Adam(self.depth_encoder.parameters(),lr=depth_encoder_paras["learning_rate"])
         if student:
             self.student_adaptation = deepcopy(actor_critic.adaptation_module)
             self.student_adaptation_optimizer = optim.Adam(self.student_adaptation.parameters())
@@ -123,9 +138,6 @@ class PPO:
                 self.depth_encoder_paras = depth_encoder_paras
                 self.student_actor_optimizer = optim.Adam(
                     [*self.student_actor.parameters(), *self.student_adaptation.parameters(), *self.depth_encoder.parameters()], lr=depth_encoder_paras["learning_rate"])
-        if self.if_depth:
-            self.depth_encoder = depth_encoder
-            self.depth_encoder_optimizer = optim.Adam(self.depth_encoder.parameters(),lr=depth_encoder_paras["learning_rate"])
 
     def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape, depth_image_shape=None):
         self.storage = RolloutStorage(num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape, depth_image_shape, self.device)
@@ -288,15 +300,15 @@ class PPO:
         return mean_value_loss, mean_surrogate_loss, mean_adaptation_loss, mean_depth_loss
 
     def behavioral_cloning(self,
-                      actions_student_buffer,
-                      actions_teacher_buffer,
-                      env_latent_buffer,
-                      adaptation_latent_buffer,
-                      clip_param_supervise=0.2,
-                      supervise_epochs=1,
-                      supervise_mini_batches=24,
-                        which =None
-                      ):
+                           actions_student_buffer,
+                           actions_teacher_buffer,
+                           env_latent_buffer=None,
+                           adaptation_latent_buffer=None,
+                           clip_param_supervise=0.2,
+                           supervise_epochs=1,
+                           supervise_mini_batches=1,
+                           which=None
+                           ):
         """supervise训练 student_actor 和 student_adaptation"""
 
         batch_size = len(actions_student_buffer)
@@ -315,25 +327,25 @@ class PPO:
             #     adaptation_latent_mini = adaptation_latent_buffer.clone()
             #     env_latent_mini = env_latent_buffer.clone()
 
-                if 'actor' in which:
-                    # 训练 `student_actor`（模仿专家策略）
-                    #actor_loss = F.mse_loss(actions_student_mini, actions_teacher_mini)
-                    actor_loss = (actions_teacher_buffer.detach() - actions_student_buffer).norm(p=2, dim=1).mean()
-                    adaptation_loss = torch.tensor(0., device=self.device)
-                    self.student_actor_optimizer.zero_grad()
-                    actor_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.student_actor.parameters(), clip_param_supervise)
-                    self.student_actor_optimizer.step()
-                elif 'adaptation' in which:
-                    # 训练 `student_adaptation`（模仿环境适应模块）
-                    adaptation_loss = F.mse_loss(env_latent_buffer, adaptation_latent_buffer)
-                    actor_loss = torch.tensor(0., device=self.device)
-                    self.student_adaptation_optimizer.zero_grad()
-                    adaptation_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.student_adaptation.parameters(), clip_param_supervise)
-                    self.student_adaptation_optimizer.step()
-                else:
-                    return torch.tensor(0., device=self.device), torch.tensor(0., device=self.device)
+            if 'actor' in which:
+                # 训练 `student_actor`（模仿专家策略）
+                # actor_loss = F.mse_loss(actions_student_mini, actions_teacher_mini)
+                actor_loss = (actions_teacher_buffer.detach() - actions_student_buffer).norm(p=2, dim=1).mean()
+                adaptation_loss = torch.tensor(0., device=self.device)
+                self.student_actor_optimizer.zero_grad()
+                actor_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.student_actor.parameters(), clip_param_supervise)
+                self.student_actor_optimizer.step()
+            elif 'adaptation' in which:
+                # 训练 `student_adaptation`（模仿环境适应模块）
+                adaptation_loss = F.mse_loss(env_latent_buffer, adaptation_latent_buffer)
+                actor_loss = torch.tensor(0., device=self.device)
+                self.student_adaptation_optimizer.zero_grad()
+                adaptation_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.student_adaptation.parameters(), clip_param_supervise)
+                self.student_adaptation_optimizer.step()
+            else:
+                return torch.tensor(0., device=self.device), torch.tensor(0., device=self.device)
 
         return actor_loss.detach().item(), adaptation_loss.detach().item()
 

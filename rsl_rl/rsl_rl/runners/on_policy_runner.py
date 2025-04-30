@@ -121,7 +121,7 @@ class OnPolicyRunner:
         self.learn = self.learn if not train_cfg['algorithm']['student'] else self.dagger
         if 'depth_encoder' in self.all_cfg and self.all_cfg['depth_encoder'] is not None:
             if self.if_depth and train_cfg['algorithm']['student']:
-                self.learn = self.dagger_vision
+                self.learn = self.learn_vision
         # Log
         self.log_dir = log_dir+self.cfg['description']
         self.writer = None
@@ -355,13 +355,14 @@ class OnPolicyRunner:
                                locs['num_learning_iterations'] - locs['it']):.1f}s\n""")
         print(log_string)
 
-    def learn_BC(self, num_learning_iterations, init_at_random_ep_len=False):
+    def learn_vision(self, num_learning_iterations, init_at_random_ep_len=False):
         # initialize writer
         if self.log_dir is not None and self.writer is None:
             self.writer = SummaryWriter(log_dir=self.log_dir, flush_secs=10)
         tot_iter = self.current_learning_iteration + num_learning_iterations
         self.start_learning_iteration = copy(self.current_learning_iteration)
-
+        torch.autograd.set_detect_anomaly(True)
+        best_reward = 0
         ep_infos = []
         rewbuffer = deque(maxlen=100)
         lenbuffer = deque(maxlen=100)
@@ -370,50 +371,60 @@ class OnPolicyRunner:
 
         obs_dict = self.env.get_observations()
         obs, privileged_obs, obs_history = obs_dict["obs"], obs_dict["privileged_obs"], obs_dict["obs_history"]
-        obs, privileged_obs, obs_history = obs.to(self.device), privileged_obs.to(self.device), obs_history.to(self.device)
+        obs, privileged_obs, obs_history = obs.to(self.device), privileged_obs.to(self.device), obs_history.to(
+            self.device)
+        # obs_history = torch.ones([96, 2250], device=self.device)
+        depth_image = self.env.depth_buffer.clone().to(self.device)[:, -1]
 
         infos = {}
-
-        self.alg.student_actor.load_state_dict(self.alg.actor_critic.actor.state_dict())
-        self.alg.student_adaptation.load_state_dict(self.alg.actor_critic.adaptation_module.state_dict())
+        infos["depth"] = self.env.depth_buffer.clone().to(self.device)[:, -1]
 
         self.alg.student_actor.train()
         self.alg.student_adaptation.train()
+        self.alg.depth_encoder.train()
 
         num_pretrain_iter = 0
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
-            adaptation_latent_buffer = []
-            env_latent_buffer = []
+
             actions_teacher_buffer = []
             actions_student_buffer = []
             for i in range(self.cfg['num_steps_per_env']):
+                if infos["depth"] != None:
+                    obs_prop_depth = obs.clone()
+                    #obs_prop_depth[:, 6:8] = 0
+                    depth_image = infos["depth"].clone()
+                    depth_latent_student = self.alg.depth_encoder(depth_image, obs_prop_depth)
+
                 with torch.no_grad():
-                    actions_teacher, latent_teacher = self.alg.actor_critic.act_expert(obs,privileged_obs)
+                    actions_teacher, latent_teacher = self.alg.actor_critic.act_expert(obs, privileged_obs)
                     actions_teacher_buffer.append(actions_teacher)
-                    env_latent_buffer.append(latent_teacher)
 
-                latent_student = self.alg.student_adaptation(obs_history)
-                actions_student = self.alg.student_actor(torch.cat((obs, latent_student), dim=-1))
-
+                obs_student = obs.clone()
+                obs_his_student = obs_history.clone()
+                latent_student = self.alg.student_adaptation(obs_his_student)
+                actions_student = self.alg.student_actor(torch.cat((obs_student, depth_latent_student, latent_student), dim=-1))
                 actions_student_buffer.append(actions_student)
-                adaptation_latent_buffer.append(latent_student)
 
-                obs_dict, rewards, dones, infos = self.env.step(actions_student.detach())
+                if it < num_pretrain_iter:
+                    obs_dict, rewards, dones, infos = self.env.step(actions_teacher.detach())
+                else:
+                    obs_dict, rewards, dones, infos = self.env.step(actions_student.detach())
                 obs, privileged_obs, obs_history = obs_dict["obs"], obs_dict["privileged_obs"], obs_dict["obs_history"]
-                obs, privileged_obs, obs_history, rewards, dones = obs.to(self.device), privileged_obs.to(self.device), obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
+                obs, privileged_obs, obs_history, rewards, dones = obs.to(self.device), privileged_obs.to(
+                    self.device), obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
 
                 if self.log_dir is not None:
-                        # Book keeping
-                        if 'episode' in infos:
-                            ep_infos.append(infos['episode'])
-                        cur_reward_sum += rewards
-                        cur_episode_length += 1
-                        new_ids = (dones > 0).nonzero(as_tuple=False)
-                        rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
-                        lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
-                        cur_reward_sum[new_ids] = 0
-                        cur_episode_length[new_ids] = 0
+                    # Book keeping
+                    if 'episode' in infos:
+                        ep_infos.append(infos['episode'])
+                    cur_reward_sum += rewards
+                    cur_episode_length += 1
+                    new_ids = (dones > 0).nonzero(as_tuple=False)
+                    rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                    lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
+                    cur_reward_sum[new_ids] = 0
+                    cur_episode_length[new_ids] = 0
 
             stop = time.time()
             collection_time = stop - start
@@ -421,20 +432,18 @@ class OnPolicyRunner:
 
             actions_teacher_buffer = torch.cat(actions_teacher_buffer, dim=0)
             actions_student_buffer = torch.cat(actions_student_buffer, dim=0)
-            env_latent_buffer = torch.cat(env_latent_buffer, dim=0)
-            adaptation_latent_buffer = torch.cat(adaptation_latent_buffer, dim=0)
 
             which = 'actor'
             actor_loss, adaptation_loss = self.alg.behavioral_cloning(
                 actions_student_buffer,
                 actions_teacher_buffer,
-                env_latent_buffer,
-                adaptation_latent_buffer,
                 which=which
             )
 
             stop = time.time()
             learn_time = stop - start
+
+            self.alg.depth_encoder.detach_hidden_states()
 
             if self.log_dir is not None:
                 self.log_student(locals())
@@ -569,8 +578,7 @@ class OnPolicyRunner:
         obs, privileged_obs, obs_history = obs_dict["obs"], obs_dict["privileged_obs"], obs_dict["obs_history"]
         obs, privileged_obs, obs_history = obs.to(self.device), privileged_obs.to(self.device), obs_history.to(
             self.device)
-        depth_image = self.env.get_depth_image()
-        depth_image.to(self.device)
+        depth_image = self.env.depth_buffer.clone().to(self.device)[:, -1]
         # self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         best_reward = 0
@@ -619,8 +627,10 @@ class OnPolicyRunner:
                     obs, privileged_obs, obs_history, rewards, dones = obs.to(self.device), privileged_obs.to(
                         self.device), obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
                     self.alg.process_env_step(rewards, dones, infos)
-                    depth_image = self.env.get_depth_image()
-                    depth_image.to(self.device)
+                    if obs_dict['depth_buffer'] is None:
+                        depth_image = depth_image
+                    else:
+                        depth_image = obs_dict['depth_buffer']
 
                     if self.log_dir is not None:
                         # Book keeping

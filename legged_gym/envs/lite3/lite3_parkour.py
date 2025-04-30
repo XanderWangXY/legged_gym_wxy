@@ -134,6 +134,7 @@ class Lite3Parkour(BaseTask):
         Args:
             actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
         """
+        self.count += 1
         clip_actions = self.cfg.normalization.clip_actions
         self.actions = torch.clip(actions, -clip_actions, clip_actions).to(self.device)
         # step physics and render each frame
@@ -148,7 +149,6 @@ class Lite3Parkour(BaseTask):
             self.gym.refresh_actor_root_state_tensor(self.sim)
 
         self.post_physics_step()
-        self.count += 1
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.cfg.normalization.clip_observations
         self.obs_buf = torch.clip(self.obs_buf, -clip_obs, clip_obs)
