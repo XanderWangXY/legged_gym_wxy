@@ -384,6 +384,7 @@ class OnPolicyRunner:
         self.alg.depth_encoder.train()
 
         num_pretrain_iter = 0
+        self.env.env.count = 0
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
 

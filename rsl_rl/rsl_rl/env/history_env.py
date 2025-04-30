@@ -184,3 +184,6 @@ class HistoryWrapper(gym.Wrapper):
         for t in range(self.obs_history_length):
             self.obs_history_list[t][:] = 0.0
         return {"obs": ret, "privileged_obs": privileged_obs, "obs_history": torch.cat(self.obs_history_list, dim=-1)}
+
+    def detach_obs_history(self):
+        self.obs_history_list = [x.detach().clone() for x in self.obs_history_list]
