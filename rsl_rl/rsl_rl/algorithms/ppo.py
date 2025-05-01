@@ -331,9 +331,10 @@ class PPO:
                 # 训练 `student_actor`（模仿专家策略）
                 # actor_loss = F.mse_loss(actions_student_mini, actions_teacher_mini)
                 actor_loss = (actions_teacher_buffer.detach() - actions_student_buffer).norm(p=2, dim=1).mean()
-                adaptation_loss = torch.tensor(0., device=self.device)
+                adaptation_loss = (env_latent_buffer.detach() - adaptation_latent_buffer).norm(p=2, dim=1).mean()
+                loss = actor_loss+adaptation_loss
                 self.student_actor_optimizer.zero_grad()
-                actor_loss.backward()
+                loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.student_actor.parameters(), clip_param_supervise)
                 self.student_actor_optimizer.step()
             elif 'adaptation' in which:

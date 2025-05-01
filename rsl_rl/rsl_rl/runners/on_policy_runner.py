@@ -99,7 +99,7 @@ class OnPolicyRunner:
                                                           self.policy_cfg['terrain_latent_dims'],
                                                           self.depth_encoder_cfg["hidden_dims"],
                                                           )
-                depth_encoder = RecurrentDepthBackbone(depth_backbone, env.cfg, self.depth_encoder_cfg).to(self.device)
+                depth_encoder = RecurrentDepthBackbone(depth_backbone, env.cfg, self.depth_encoder_cfg, train_cfg).to(self.device)
                 print(depth_encoder)
             else:
                 depth_encoder = None
@@ -361,7 +361,7 @@ class OnPolicyRunner:
             self.writer = SummaryWriter(log_dir=self.log_dir, flush_secs=10)
         tot_iter = self.current_learning_iteration + num_learning_iterations
         self.start_learning_iteration = copy(self.current_learning_iteration)
-        torch.autograd.set_detect_anomaly(True)
+
         best_reward = 0
         ep_infos = []
         rewbuffer = deque(maxlen=100)
@@ -378,6 +378,7 @@ class OnPolicyRunner:
 
         infos = {}
         infos["depth"] = self.env.depth_buffer.clone().to(self.device)[:, -1]
+        infos["delta_yaw_ok"] = torch.ones(self.env.num_envs, dtype=torch.bool, device=self.device)
 
         self.alg.student_actor.train()
         self.alg.student_adaptation.train()
@@ -390,12 +391,24 @@ class OnPolicyRunner:
 
             actions_teacher_buffer = []
             actions_student_buffer = []
+
+            yaw_buffer_student = []
+            yaw_buffer_teacher = []
+            delta_yaw_ok_buffer = []
+
             for i in range(self.cfg['num_steps_per_env']):
                 if infos["depth"] != None:
                     obs_prop_depth = obs.clone()
-                    #obs_prop_depth[:, 6:8] = 0
+                    obs_prop_depth[:, :2] = 0
+
                     depth_image = infos["depth"].clone()
-                    depth_latent_student = self.alg.depth_encoder(depth_image, obs_prop_depth)
+                    #depth_latent_student = self.alg.depth_encoder(depth_image, obs_prop_depth)
+                    depth_latent_and_yaw = self.alg.depth_encoder(depth_image, obs_prop_depth)
+                    depth_latent_student = depth_latent_and_yaw[:, :-2]
+                    yaw = depth_latent_and_yaw[:, -2:]
+
+                    yaw_buffer_student.append(yaw)
+                    yaw_buffer_teacher.append(obs[:, :2])
 
                 with torch.no_grad():
                     actions_teacher, latent_teacher = self.alg.actor_critic.act_expert(obs, privileged_obs)
@@ -403,6 +416,10 @@ class OnPolicyRunner:
 
                 obs_student = obs.clone()
                 obs_his_student = obs_history.clone()
+                ###
+                obs_student[infos["delta_yaw_ok"], :2] = yaw.detach()[infos["delta_yaw_ok"]]
+                delta_yaw_ok_buffer.append(torch.nonzero(infos["delta_yaw_ok"]).size(0) / infos["delta_yaw_ok"].numel())
+                ###
                 latent_student = self.alg.student_adaptation(obs_his_student)
                 actions_student = self.alg.student_actor(torch.cat((obs_student, depth_latent_student, latent_student), dim=-1))
                 actions_student_buffer.append(actions_student)
@@ -431,13 +448,19 @@ class OnPolicyRunner:
             collection_time = stop - start
             start = stop
 
+            delta_yaw_ok_percentage = sum(delta_yaw_ok_buffer) / len(delta_yaw_ok_buffer)
+
             actions_teacher_buffer = torch.cat(actions_teacher_buffer, dim=0)
             actions_student_buffer = torch.cat(actions_student_buffer, dim=0)
+            yaw_buffer_student = torch.cat(yaw_buffer_student, dim=0)
+            yaw_buffer_teacher = torch.cat(yaw_buffer_teacher, dim=0)
 
             which = 'actor'
             actor_loss, adaptation_loss = self.alg.behavioral_cloning(
                 actions_student_buffer,
                 actions_teacher_buffer,
+                yaw_buffer_student,
+                yaw_buffer_teacher,
                 which=which
             )
 

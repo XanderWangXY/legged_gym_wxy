@@ -420,7 +420,12 @@ class Lite3Parkour(BaseTask):
     def compute_observations(self):
         """ Computes observations
         """
+        if self.count % 5 == 0:
+            self.delta_yaw = self.target_yaw - self.rpy[:, 2]
+            self.delta_next_yaw = self.next_target_yaw - self.rpy[:, 2]
         self.obs_buf = torch.cat((  #self.base_lin_vel * self.obs_scales.lin_vel,
+                                    self.delta_yaw[:, None],
+                                    self.delta_next_yaw[:, None],
                                     self.commands[:, :3] * self.commands_scale,
                                     #self.projected_gravity,
                                     self.rpy * self.obs_scales.orientation,
@@ -442,9 +447,6 @@ class Lite3Parkour(BaseTask):
     def compute_privileged_observations(self):
         """ Computes privileged observations
         """
-        if self.count % 5 == 0:
-            self.delta_yaw = self.target_yaw - self.rpy[:, 2]
-            self.delta_next_yaw = self.next_target_yaw - self.rpy[:, 2]
         contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
         #print(contact_states)
         # contact_states = torch.norm(self.sensor_forces[:, :, :2], dim=2) > 1. # todo
@@ -481,8 +483,6 @@ class Lite3Parkour(BaseTask):
              (self.Kp_factors - 1) * self.priv_obs_scales.kp_factor,  # Kp factor, 12
              (self.Kd_factors - 1) * self.priv_obs_scales.kd_factor,  # Kd factor, 12
             self.base_lin_vel * self.obs_scales.lin_vel,
-            self.delta_yaw[:, None],
-            self.delta_next_yaw[:, None],
         ), dim=1)
         # print(self.privileged_obs_buf.shape)
 

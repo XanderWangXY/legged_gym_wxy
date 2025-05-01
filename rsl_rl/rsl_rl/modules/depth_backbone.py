@@ -5,14 +5,14 @@ import torchvision
 from rsl_rl.utils import unpad_trajectories
 
 class RecurrentDepthBackbone(nn.Module):
-    def __init__(self, base_backbone, env_cfg, depth_cfg) -> None:
+    def __init__(self, base_backbone, env_cfg, depth_cfg, train_cfg) -> None:
         super().__init__()
         activation = nn.ELU()
         last_activation = nn.Tanh()
         self.base_backbone = base_backbone
         if env_cfg == None:
             self.combination_mlp = nn.Sequential(
-                                    nn.Linear(36 + 45, 128),
+                                    nn.Linear(36 + env_cfg.env.num_observations, 128),
                                     activation,
                                     nn.Linear(128, 32)
                                 )
@@ -25,7 +25,7 @@ class RecurrentDepthBackbone(nn.Module):
         # self.rnn = nn.GRU(input_size=32, hidden_size=512, batch_first=True)
         self.memory = Memory(32, type=depth_cfg['rnn_type'], num_layers=depth_cfg['rnn_num_layers'], hidden_size=depth_cfg['hidden_dims'])
         self.output_mlp = nn.Sequential(
-                                nn.Linear(depth_cfg['hidden_dims'], 36),
+                                nn.Linear(depth_cfg['hidden_dims'], 36+2),
                                 last_activation
                             )
         self.hidden_states = None

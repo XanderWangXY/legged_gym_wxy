@@ -33,9 +33,9 @@ import numpy as np
 
 class Lite3ParkourCfg( LeggedRobotCfg ):
     class env(LeggedRobotCfg.env):
-        num_observations = 45#235-187
+        num_observations = 45+2#235-187
         n_scan = 132
-        num_privileged_obs = n_scan+36+3+1+3+4+4+2 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        num_privileged_obs = n_scan+36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
         num_envs = 4096
 
@@ -441,7 +441,7 @@ class Lite3ParkourCfg( LeggedRobotCfg ):
 
     class student:
         student = False
-        num_envs = 192
+        num_envs = 256
 
 class Lite3ParkourCfgPPO( LeggedRobotCfgPPO ):
     class policy(LeggedRobotCfgPPO.policy):
@@ -472,7 +472,7 @@ class Lite3ParkourCfgPPO( LeggedRobotCfgPPO ):
         num_learning_epochs = 1
 
     class runner( LeggedRobotCfgPPO.runner ):
-        max_iterations = 50000  # number of policy updates
+        max_iterations = 20000  # number of policy updates
         run_name = ''
         experiment_name = 'parkour_lite3'
         description = 'test'
