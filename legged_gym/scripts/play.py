@@ -87,8 +87,6 @@ def play(args):
         env_cfg.domain_rand.randomize_base_mass = False
         env_cfg.domain_rand.randomize_base_com = False
 
-        depth_latent_buffer = []
-
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
     obs = env.get_observations()
@@ -96,13 +94,20 @@ def play(args):
     train_cfg.runner.resume = True
     env.env.friction_coeffs = None
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
-    if env_cfg.student.student is not None and env_cfg.student.student:
+    if env_cfg.student.student is not None and env_cfg.student.student and env.cfg.depth.use_camera:
+        policy = ppo_runner.alg.get_student_vision_inference_policy(device=env.device)
+    elif env_cfg.student.student is not None and env_cfg.student.student:
         policy = ppo_runner.alg.get_student_inference_policy(device=env.device)  #####
     elif 'dream' in env.env.task_name:
         policy = ppo_runner.get_inference_policy(device=env.device)
     else:
         policy = ppo_runner.get_expert_policy(device=env.device)  #####
-    
+
+    if env.cfg.depth.use_camera:
+        depth_encoder = ppo_runner.get_depth_encoder_inference_policy(device=env.device)
+        infos = {}
+        infos["depth"] = env.depth_buffer.clone().to(ppo_runner.device)[:, -1] if ppo_runner.if_depth else None
+
     # export policy as a jit module (used to run it from C++)
     if EXPORT_POLICY:
         path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
@@ -125,7 +130,19 @@ def play(args):
         # actions = policy(obs.detach())
         # obs, _, rews, dones, infos = env.step(actions.detach())
         with torch.no_grad():
-            if env_cfg.student.student is not None and env_cfg.student.student:
+            if env_cfg.student.student is not None and env_cfg.student.student and env.cfg.depth.use_camera:
+                if infos["depth"] != None:
+                    obs[:, :2] = 0
+
+                    depth_image = infos["depth"].clone()
+                    # depth_latent_student = self.alg.depth_encoder(depth_image, obs_prop_depth)
+                    depth_latent_and_yaw = depth_encoder(depth_image, obs)
+                    depth_latent_student = depth_latent_and_yaw[:, :-2]
+                    yaw = depth_latent_and_yaw[:, -2:]
+                obs[:, :2] = yaw
+                actions, _ = policy(obs, obs_history, depth_latent_student)
+
+            elif env_cfg.student.student is not None and env_cfg.student.student:
                 actions,_ = policy(obs, obs_history)##########
             elif 'dream' in env.env.task_name:
                 actions = policy(obs, obs_history)

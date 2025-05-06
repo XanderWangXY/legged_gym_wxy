@@ -753,3 +753,9 @@ class OnPolicyRunner:
         if device is not None:
             self.alg.actor_critic.to(device)
         return self.alg.actor_critic.act_expert
+
+    def get_depth_encoder_inference_policy(self, device=None):
+        self.alg.depth_encoder.eval()
+        if device is not None:
+            self.alg.depth_encoder.to(device)
+        return self.alg.depth_encoder

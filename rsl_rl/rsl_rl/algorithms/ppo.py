@@ -457,3 +457,14 @@ class PPO:
         actions_mean = self.student_actor(torch.cat((observations, latent), dim=-1))
         policy_info["latents"] = latent.detach().cpu().numpy()
         return actions_mean, latent
+
+    def get_student_vision_inference_policy(self, device=None):
+        self.student_adaptation.eval()
+        self.student_actor.eval()
+        return self.act_student_vision_inference
+
+    def act_student_vision_inference(self, observations, observation_history, depth_latent_student, policy_info={}):
+        latent = self.student_adaptation(observation_history)
+        actions_mean = self.student_actor(torch.cat((observations, depth_latent_student, latent), dim=-1))
+        policy_info["latents"] = latent.detach().cpu().numpy()
+        return actions_mean, latent
