@@ -340,17 +340,16 @@ class Lite3AMP(BaseTask):
 
         self.privileged_obs_buf = torch.cat((
             self.heights.squeeze(-1),
-            self.base_lin_vel * self.obs_scales.lin_vel,
             #self.base_ang_vel * self.obs_scales.ang_vel,
              contact_states * self.priv_obs_scales.contact_state,
              friction_coefficients * self.priv_obs_scales.friction,
              #external_forces_and_torques * self.priv_obs_scales.external_wrench,
-
              (self.mass_payloads - 6) * self.priv_obs_scales.mass_payload,  # payload, 1
              self.com_displacements * self.priv_obs_scales.com_displacement,  # com_displacements, 3
              (self.motor_strengths - 1) * self.priv_obs_scales.motor_strength,  # motor strength, 12
              (self.Kp_factors - 1) * self.priv_obs_scales.kp_factor,  # Kp factor, 12
              (self.Kd_factors - 1) * self.priv_obs_scales.kd_factor,  # Kd factor, 12
+            self.base_lin_vel * self.obs_scales.lin_vel,
         ), dim=1)
         # print(self.privileged_obs_buf.shape)
     def get_amp_observations(self):

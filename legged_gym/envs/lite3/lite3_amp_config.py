@@ -81,7 +81,7 @@ class Lite3AMPCfg( LeggedRobotCfg ):
         randomize_base_mass = True
         added_mass_range = [-1., 3.]
         randomize_com_offset = True
-        com_offset_range = [[-0.05, 0.01], [-0.03, 0.03], [-0.03, 0.03]]
+        com_offset_range = [[-0.05, 0.1], [-0.03, 0.03], [-0.03, 0.1]]
         randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         randomize_Kp_factor = True
