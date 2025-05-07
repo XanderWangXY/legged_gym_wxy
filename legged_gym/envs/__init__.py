@@ -50,6 +50,8 @@ from .lite3.lite3_dreamwaq import Lite3DreamWaQ
 from .lite3.lite3_dreamwaq_config import Lite3DreamWaQCfg, Lite3DreamWaQCfgPPO
 from .lite3.lite3_pie import Lite3PIE
 from .lite3.lite3_pie_config import Lite3PIECfg,Lite3PIECfgPPO
+from .lite3.lite3_swc import Lite3SWC
+from .lite3.lite3_swc_config import Lite3SWCCfg,Lite3SWCCfgPPO
 
 import os
 
@@ -68,3 +70,4 @@ task_registry.register( "lite3footstand", Lite3Skill, Lite3FootStandCfg(), Lite3
 task_registry.register( "lite3parkour", Lite3Parkour, Lite3ParkourCfg(), Lite3ParkourCfgPPO() )
 task_registry.register( "lite3dreamwaq", Lite3DreamWaQ, Lite3DreamWaQCfg(), Lite3DreamWaQCfgPPO() )
 task_registry.register( "lite3pie", Lite3PIE, Lite3PIECfg(), Lite3PIECfgPPO() )
+task_registry.register( "lite3swc", Lite3SWC, Lite3SWCCfg(), Lite3SWCCfgPPO() )

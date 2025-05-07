@@ -732,7 +732,7 @@ class OnPolicyRunner:
                 print("No saved student actor, Copying actor critic actor to student_actor...")
                 self.alg.student_actor.load_state_dict(self.alg.actor_critic.actor.state_dict())
         if self.if_depth:
-            if 'depth_encoder' not in loaded_dict:
+            if 'depth_encoder_state_dict' not in loaded_dict:
                 warnings.warn("'depth_encoder' key does not exist, not loading depth_encoder...")
             else:
                 print("Saved depth_encoder detected, loading...")

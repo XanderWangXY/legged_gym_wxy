@@ -103,10 +103,11 @@ def play(args):
     else:
         policy = ppo_runner.get_expert_policy(device=env.device)  #####
 
-    if env.cfg.depth.use_camera:
-        depth_encoder = ppo_runner.get_depth_encoder_inference_policy(device=env.device)
-        infos = {}
-        infos["depth"] = env.depth_buffer.clone().to(ppo_runner.device)[:, -1] if ppo_runner.if_depth else None
+    if hasattr(env.cfg, "depth"):
+        if env.cfg.depth.use_camera:
+            depth_encoder = ppo_runner.get_depth_encoder_inference_policy(device=env.device)
+            infos = {}
+            infos["depth"] = env.depth_buffer.clone().to(ppo_runner.device)[:, -1] if ppo_runner.if_depth else None
 
     # export policy as a jit module (used to run it from C++)
     if EXPORT_POLICY:
