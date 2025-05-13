@@ -40,18 +40,18 @@ class EqrRoughCfg( LeggedRobotCfg ):
     class init_state( LeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.40]  # x,y,z [m]
         default_joint_angles = {  # = target angles [rad] when action = 0.0
-             "fl_leg_1": 0.0,
-            "fr_leg_1": 0.0,
-            "hl_leg_1": 0.0,
-            "hr_leg_1": 0.0,
-            "fl_leg_2": -0.5,
-            "fr_leg_2": -0.5,
-            "hl_leg_2": -0.5,
-            "hr_leg_2": -0.5,
-            "fl_leg_3": 1.1,
-            "fr_leg_3": 1.1,
-            "hl_leg_3": 1.1,
-            "hr_leg_3": 1.1,
+            "fl_leg_1_joint": 0.0,
+            "fr_leg_1_joint": 0.0,
+            "hl_leg_1_joint": 0.0,
+            "hr_leg_1_joint": 0.0,
+            "fl_leg_2_joint": -0.5,
+            "fr_leg_2_joint": -0.5,
+            "hl_leg_2_joint": -0.5,
+            "hr_leg_2_joint": -0.5,
+            "fl_leg_3_joint": 1.1,
+            "fr_leg_3_joint": 1.1,
+            "hl_leg_3_joint": 1.1,
+            "hr_leg_3_joint": 1.1,
         }
 
     class terrain( LeggedRobotCfg.terrain ):
@@ -82,8 +82,8 @@ class EqrRoughCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'joint': 30.}  # [N*m/rad]
-        damping = {'joint': 1.0}     # [N*m*s/rad]
+        stiffness = {'joint': 20.}  # [N*m/rad]
+        damping = {'joint': 0.7}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT

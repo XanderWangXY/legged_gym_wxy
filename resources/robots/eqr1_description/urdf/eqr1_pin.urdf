@@ -84,7 +84,7 @@
     </collision> -->
   </link>
   <joint
-    name="fl_leg_1"
+    name="fl_leg_1_joint"
     type="revolute">
     <origin
       xyz="0.149 0.05 -0.045"
@@ -142,7 +142,7 @@
     </collision>
   </link>
   <joint
-    name="fl_leg_2"
+    name="fl_leg_2_joint"
     type="revolute">
     <origin
       xyz="0.0565 0 0"
@@ -200,7 +200,7 @@
     </collision>
   </link>
   <joint
-    name="fl_leg_3"
+    name="fl_leg_3_joint"
     type="revolute">
     <origin
       xyz="-0.19401 0.112 -0.048585"
@@ -309,7 +309,7 @@
     </collision> -->
   </link>
   <joint
-    name="fr_leg_1"
+    name="fr_leg_1_joint"
     type="revolute">
     <origin
       xyz="0.149 -0.05 -0.045"
@@ -366,7 +366,7 @@
     </collision>
   </link>
   <joint
-    name="fr_leg_2"
+    name="fr_leg_2_joint"
     type="revolute">
     <origin
       xyz="0.0565 0 0"
@@ -423,7 +423,7 @@
     </collision>
   </link>
   <joint
-    name="fr_leg_3"
+    name="fr_leg_3_joint"
     type="revolute">
     <origin
       xyz="-0.19401 -0.112 -0.048585"
@@ -533,7 +533,7 @@
     </collision> -->
   </link>
   <joint
-    name="hl_leg_1"
+    name="hl_leg_1_joint"
     type="revolute">
     <origin
       xyz="-0.149 0.05 -0.045"
@@ -590,7 +590,7 @@
     </collision>
   </link>
   <joint
-    name="hl_leg_2"
+    name="hl_leg_2_joint"
     type="revolute">
     <origin
       xyz="-0.0565 0 0"
@@ -647,7 +647,7 @@
     </collision>
   </link>
   <joint
-    name="hl_leg_3"
+    name="hl_leg_3_joint"
     type="revolute">
     <origin
       xyz="-0.19401 0.112 -0.048585"
@@ -757,7 +757,7 @@
     </collision> -->
   </link>
   <joint
-    name="hr_leg_1"
+    name="hr_leg_1_joint"
     type="revolute">
     <origin
       xyz="-0.149 -0.05 -0.045"
@@ -814,7 +814,7 @@
     </collision>
   </link>
   <joint
-    name="hr_leg_2"
+    name="hr_leg_2_joint"
     type="revolute">
     <origin
       xyz="-0.0565 0 0"
@@ -872,7 +872,7 @@
     </collision>
   </link>
   <joint
-    name="hr_leg_3"
+    name="hr_leg_3_joint"
     type="revolute">
     <origin
       xyz="-0.19401 -0.112 -0.048585"
