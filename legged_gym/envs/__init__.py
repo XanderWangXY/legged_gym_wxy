@@ -53,6 +53,9 @@ from .lite3.lite3_pie_config import Lite3PIECfg,Lite3PIECfgPPO
 from .lite3.lite3_swc import Lite3SWC
 from .lite3.lite3_swc_config import Lite3SWCCfg,Lite3SWCCfgPPO
 
+from .eqr.eqr import EQR
+from .eqr.eqr_config import EqrRoughCfg, EqrRoughCfgPPO
+
 import os
 
 from legged_gym.utils.task_registry import task_registry
@@ -71,3 +74,5 @@ task_registry.register( "lite3parkour", Lite3Parkour, Lite3ParkourCfg(), Lite3Pa
 task_registry.register( "lite3dreamwaq", Lite3DreamWaQ, Lite3DreamWaQCfg(), Lite3DreamWaQCfgPPO() )
 task_registry.register( "lite3pie", Lite3PIE, Lite3PIECfg(), Lite3PIECfgPPO() )
 task_registry.register( "lite3swc", Lite3SWC, Lite3SWCCfg(), Lite3SWCCfgPPO() )
+
+task_registry.register( "eqr", LeggedRobot, EqrRoughCfg(), EqrRoughCfgPPO() )

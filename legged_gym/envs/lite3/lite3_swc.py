@@ -257,6 +257,49 @@ class Lite3SWC(LeggedRobot):
             self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
         #print(self.commands)
 
+    def compute_privileged_observations(self):
+        """ Computes privileged observations
+        """
+        contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
+        #print(contact_states)
+        # contact_states = torch.norm(self.sensor_forces[:, :, :2], dim=2) > 1. # todo
+        # contact_forces = self.sensor_forces.flatten(1)
+        # contact_normals = self.contact_normal
+        if self.friction_coeffs is not None:
+            friction_coefficients = self.friction_coeffs.squeeze(-1).repeat(1, 4).to(self.device)
+        else:
+            friction_coefficients = torch.tensor(self.cfg.terrain.static_friction).repeat(self.num_envs, 4).to(self.device)
+
+        # thigh_and_shank_contact = torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1
+        external_forces_and_torques = torch.cat((self.push_forces[:, 0, :], self.push_torques[:, 0, :]), dim=-1)
+        # # airtime = self.feet_air_time
+        # # self.privileged_obs_buf = torch.cat(
+        # #     (contact_states * self.priv_obs_scales.contact_state,
+        # #      contact_forces * self.priv_obs_scales.contact_force,
+        # #      contact_normals * self.priv_obs_scales.contact_normal,
+        # #      friction_coefficients * self.priv_obs_scales.friction,
+        # #      thigh_and_shank_contact * self.priv_obs_scales.thigh_and_shank_contact_state,
+        # #      external_forces_and_torques * self.priv_obs_scales.external_wrench,
+        # #      airtime * self.priv_obs_scales.airtime),
+        # #     dim=-1)
+
+        self.privileged_obs_buf = torch.cat((
+            #self.heights.squeeze(-1),
+            #self.base_ang_vel * self.obs_scales.ang_vel,
+            self.root_states[:, 2].unsqueeze(-1),  # base_height
+             contact_states * self.priv_obs_scales.contact_state,
+             friction_coefficients * self.priv_obs_scales.friction,
+             #external_forces_and_torques * self.priv_obs_scales.external_wrench,
+
+             (self.mass_payloads - 6) * self.priv_obs_scales.mass_payload,  # payload, 1
+             self.com_displacements * self.priv_obs_scales.com_displacement,  # com_displacements, 3
+             (self.motor_strengths - 1) * self.priv_obs_scales.motor_strength,  # motor strength, 12
+             (self.Kp_factors - 1) * self.priv_obs_scales.kp_factor,  # Kp factor, 12
+             (self.Kd_factors - 1) * self.priv_obs_scales.kd_factor,  # Kd factor, 12
+            self.base_lin_vel * self.obs_scales.lin_vel,
+        ), dim=1)
+        # print(self.privileged_obs_buf.shape)
+
     def _update_stage_buf(self):
         com_height = self.root_states[:, 2]
         body_z = quat_rotate_inverse(self.base_quat, self.gravity_vec)
@@ -366,7 +409,7 @@ class Lite3SWC(LeggedRobot):
         return -torch.square(self.dof_pos - self.default_dof_pos).mean(dim=-1)
 
     # ------------ cost functions----------------
-    def _cost_foot_contact(self):
+    def _reward_foot_contact(self):
         foot_contact_forces = self.contact_forces[:, self.feet_indices, :]
         calf_contact_forces = self.contact_forces[:, self.calf_indices, :]
         foot_contact = ((torch.norm(foot_contact_forces, dim=2) > 10.0) |
@@ -380,7 +423,7 @@ class Lite3SWC(LeggedRobot):
         reward += self.is_stage_land * 0.25
         return reward
 
-    def _cost_undesired_contact(self):
+    def _reward_undesired_contact(self):
         contact = self.contact_forces
         term_contact = torch.any(torch.norm(contact[:, self.termination_contact_indices, :], dim=-1) > 1.0, dim=-1)
         undesired_contact = torch.any(torch.norm(contact[:, self.penalised_contact_indices, :], dim=-1) > 1.0, dim=-1)
@@ -394,14 +437,14 @@ class Lite3SWC(LeggedRobot):
         reward += self.is_stage_land * undesired_contact.float()
         return reward
 
-    def _cost_joint_position_limit(self):
+    def _reward_joint_position_limit(self):
         out_of_bounds = (self.dof_pos < self.dof_pos_limits[:, 0]) | (self.dof_pos > self.dof_pos_limits[:, 1])
         return out_of_bounds.float().mean(dim=-1)
 
-    def _cost_joint_velocity_limit(self):
+    def _reward_joint_velocity_limit(self):
         over_speed = torch.abs(self.dof_vel) > self.dof_vel_limits
         return over_speed.float().mean(dim=-1)
 
-    def _cost_joint_torque_limit(self):
+    def _reward_joint_torque_limit(self):
         over_torque = torch.abs(self.torques) > self.torque_limits
         return over_torque.float().mean(dim=-1)

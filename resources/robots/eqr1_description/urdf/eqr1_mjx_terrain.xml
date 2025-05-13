@@ -1,0 +1,270 @@
+<mujoco model="eqr1">
+  <compiler angle="radian" meshdir="../meshes/" autolimits="true"/>
+  <size njmax="500" nconmax="100" />
+  <option gravity='0 0 -9.806'  ls_iterations="4" iterations="4" timestep='0.002'>
+    <flag eulerdamp="disable"/>
+  </option>
+  <custom> 
+      <numeric data="80" name="max_contact_points"/> 
+      <numeric data="200" name="max_geom_pairs"/> 
+  </custom> 
+
+  <default>
+        <joint limited='true' damping="0.05" frictionloss="0.4" armature="0.05" />
+
+        <default class="leg_1">
+          <joint  frictionloss="0.3" />
+          <position forcerange="-30 30" inheritrange="1" kp="20" kv="0.7"/>
+        </default>
+        <default class="leg_2">
+          <joint  frictionloss="0.3"/>
+          <position forcerange="-30 30" inheritrange="1" kp="20" kv="0.7"/>
+        </default>
+        <default class="leg_3">
+          <joint  frictionloss="0.6"/>
+          <position forcerange="-30 30" inheritrange="1" kp="20" kv="0.7"/>
+        </default>
+
+        <motor ctrllimited='true'/>
+        <geom  condim='3' contype="1" conaffinity="15" solref='0.001 2' friction='0.9 0.2 0.2'/>
+        <equality solref='0.001 2'/>
+        <default class='visualgeom'>
+            <geom material='visualgeom' condim='3' contype='0' conaffinity='0'/>
+        </default>
+
+        <default class='obstacle'>
+            <geom material='obstacle' condim='3' contype='1' conaffinity='15'/>
+        </default>
+  </default>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/>
+    <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2"
+        width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
+    <texture name="texplane2" type="2d" builtin="checker" rgb1="1 0.3137 0.1843" rgb2="0.0 0.30196 0.38039"
+        width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
+
+    <material name="matplane" reflectance="0." texture="texplane" texrepeat="1 1" texuniform="true"/>
+    <material name="matplane2" reflectance="0.1" texture="texplane2" texrepeat="1 1" texuniform="true"/>
+    
+    <material name='link_body'  rgba='0.36 0.91 0.66 0.95'/>
+    <material name='link_body2'  rgba='0.517 0.53 0.90 0.95'/>
+    <material name='obstacle'  rgba='0.9 0.6 0.2 1'/>
+    <material name='visualgeom'  rgba='0.5 0.9 0.2 0.9'/>
+
+    <mesh name="base_link" file="base_link.STL"/>
+    <mesh name="fl_leg_l1" file="fl_leg_l1.STL"/>
+    <mesh name="fl_leg_l2" file="fl_leg_l2.STL"/>
+    <mesh name="fl_leg_l3" file="fl_leg_l3.STL"/>
+    <mesh name="fl_leg_ee" file="fl_leg_ee.STL"/>
+    <mesh name="fr_leg_l1" file="fr_leg_l1.STL"/>
+    <mesh name="fr_leg_l2" file="fr_leg_l2.STL"/>
+    <mesh name="fr_leg_l3" file="fr_leg_l3.STL"/>
+    <mesh name="fr_leg_ee" file="fr_leg_ee.STL"/>
+    <mesh name="hl_leg_l1" file="hl_leg_l1.STL"/>
+    <mesh name="hl_leg_l2" file="hl_leg_l2.STL"/>
+    <mesh name="hl_leg_l3" file="hl_leg_l3.STL"/>
+    <mesh name="hl_leg_ee" file="hl_leg_ee.STL"/>
+    <mesh name="hr_leg_l1" file="hr_leg_l1.STL"/>
+    <mesh name="hr_leg_l2" file="hr_leg_l2.STL"/>
+    <mesh name="hr_leg_l3" file="hr_leg_l3.STL"/>
+    <mesh name="hr_leg_ee" file="hr_leg_ee.STL"/>
+
+    <!-- <hfield file="../../terrains/noisy.png" name='hf1' size="20 20 .01 .001"/>  -->
+
+  </asset>
+
+  <worldbody>
+    <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false"/>
+    <light directional="true" diffuse=".6 .6 .6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1"/>
+    <geom name="ground" type="plane" size="0 0 1" pos="0 0 -0.001" quat="1 0 0 0" material="matplane" condim="1" conaffinity='15' group="2"/>
+    <!-- <geom name='hfield1' pos='-0.0 -0.0 0.0' hfield='hf1'  type='hfield'  material="matplane2"  condim="1" conaffinity='15' group="2"/> -->
+    
+    <!-- 台阶 -->
+    <geom name="stair_1" type="box" pos="2 0 0.05" size="5 5 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_2" type="box" pos="2 0 0.15" size="4.7 4.7 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_3" type="box" pos="2 0 0.25" size="4.4 4.4 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_4" type="box" pos="2 0 0.35" size="4.1 4.1 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_5" type="box" pos="2 0 0.45" size="3.8 3.8 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_6" type="box" pos="2 0 0.55" size="3.5 3.5 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_7" type="box" pos="2 0 0.65" size="3.2 3.2 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_8" type="box" pos="2 0 0.75" size="2.9 2.9 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_9" type="box" pos="2 0 0.85" size="2.6 2.6 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_10" type="box" pos="2 0 0.95" size="2.3 2.3 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_11" type="box" pos="2 0 1.05" size="2.0 2.0 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_12" type="box" pos="2 0 1.15" size="1.7 1.7 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_13" type="box" pos="2 0 1.25" size="1.4 1.4 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_14" type="box" pos="2 0 1.35" size="1.1 1.1 0.05" condim="1" conaffinity='15' group="2"/>
+    <geom name="stair_15" type="box" pos="2 0 1.45" size="0.8 0.8 0.05" condim="1" conaffinity='15' group="2"/>
+
+    <!-- 斜坡 -->
+    <geom name="center" type="box" pos="20 0 1" size="1 5.5 1" condim="1" conaffinity='15' group="2"/>
+    <geom name="slope_up" type="box" pos="14.17 0 0.71" size="5 5.5 0.3" euler="0 -0.2 0" condim="1" conaffinity='15' group="2"/>
+    <geom name="slope_down" type="box" pos="25.84 0 0.71" size="5 5.5 0.3" euler="0 0.2 0" condim="1" conaffinity='15' group="2"/>
+    <geom name="wall_left" type="box" pos="20 5.5 0.88" size="11 0.1 2.5" euler="0 0 0" condim="1" conaffinity='15' group="2"/>
+    <geom name="wall_right" type="box" pos="20 -5.5 0.88" size="11 0.1 2.5" euler="0 0 0" condim="1" conaffinity='15' group="2"/>
+
+
+    <body name="base_link" pos="8.1 0.0 0.33">
+      <camera name="track" mode="trackcom" pos="0 -3.5 1" euler="1.2 0 0"/>
+      <geom quat="1.7949e-09 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" density="0" mesh="base_link" rgba="0.953 0.890 0.839 1"/>
+
+      <inertial pos="-0.0027442 0.0015218 -0.044521" mass="6.6344" diaginertia="0.031183 0.07013 0.085346" />
+      <!-- <joint type='slide' axis='1 0 0' limited='false' damping="0.0" frictionloss="0.0" armature="0.0"/>
+      <joint type='slide' axis='0 1 0' limited='false' damping="0.0" frictionloss="0.0" armature="0.0"/>
+      <joint type='slide' axis='0 0 1' limited='false' damping="0.0" frictionloss="0.0" armature="0.0"/>
+      <joint type='ball' limited='false' damping="0.0" frictionloss="0.0" armature="0.0"/> -->
+      <joint type='free' limited='false' damping="0.0" frictionloss="0.0" armature="0.00001"/>
+      <site name='imu' size='0.01' pos='0.0 0 0.0'/>
+
+      <body name="fl_leg_l1" pos="0.149 0.05 -0.045">
+        <inertial pos="0.052069 -0.0025704 -0.00022742" quat="0.516875 0.470575 0.494696 0.516405" mass="0.73805" diaginertia="0.000845238 0.000694384 0.000589378"/>
+        <joint name="fl_leg_1" pos="0 0 0" axis="1 0 0" range="-0.837 0.837" actuatorfrcrange="-60 60"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="fl_leg_l1"/>
+        <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="fl_leg_1"/> -->
+        <body name="fl_leg_l2" pos="0.0565 0 0">
+          <inertial pos="-0.020267 0.079245 -0.0023193" quat="-0.312335 0.730674 -0.182613 0.578977" mass="1.0843" diaginertia="0.00427815 0.00388481 0.00103204"/>
+          <joint name="fl_leg_2" pos="0 0 0" axis="0 1 0" range="-3.49 2.042" actuatorfrcrange="-60 60"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="fl_leg_l2"/>
+          <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="fl_leg_2"/> -->
+          <body name="fl_leg_l3" pos="-0.19401 0.112 -0.048585">
+            <inertial pos="0.0935038 5.51631e-05 -0.00588398" quat="0.502092 0.497603 0.498549 0.501741" mass="0.167648" diaginertia="0.00141274 0.00139842 3.13254e-05"/>
+            <joint name="fl_leg_3" pos="0 0 0" axis="0 1 0" range="0 1.84" actuatorfrcrange="-60 60"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="fl_leg_l3"/>
+            <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="fl_leg_3"/> -->
+            <geom size="0.012 0.012 0.035" pos="0.065 0 -0.0" quat="0.997888 0 0.8649542 0" type="box" rgba="0.89804 0.91765 0.92941 1"/>
+            <geom size="0.012 0.012 0.03" pos="0.135 0 0.0" quat="0.992198 0 1.1949542 0" type="box" rgba="0.89804 0.91765 0.92941 1"/>
+            <geom pos="0.20148 0 -0.018511" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="fl_leg_ee"/>
+            <!-- <geom pos="0.20148 0 -0.018511" quat="1 0 0 0" type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="fl_leg_ee"/> -->
+            <body name="fl_leg_ee" pos="0.20148 0 -0.018511">
+              <geom name="fl_leg_ee" size="0.02" pos="0 0 0" rgba="1 0.8 0.4 0.4"/>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="fr_leg_l1" pos="0.149 -0.05 -0.045">
+        <inertial pos="0.052469 0.002473 -0.00033617" quat="0.517633 0.483008 0.464221 0.532221" mass="0.74136" diaginertia="0.00084717 0.000699968 0.000591862"/>
+        <joint name="fr_leg_1" pos="0 0 0" axis="1 0 0" range="-0.837 0.837" actuatorfrcrange="-60 60"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="fr_leg_l1"/>
+        <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="fr_leg_1"/> -->
+        <body name="fr_leg_l2" pos="0.0565 0 0">
+          <inertial pos="-0.023051 -0.080149 -0.0029038" quat="0.314085 0.731009 0.203397 0.570619" mass="1.0885" diaginertia="0.0048113 0.00432278 0.00102792"/>
+          <joint name="fr_leg_2" pos="0 0 0" axis="0 1 0" range="-3.49 2.042" actuatorfrcrange="-60 60"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="fr_leg_l2"/>
+          <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="fr_leg_2"/> -->
+          <body name="fr_leg_l3" pos="-0.19401 -0.112 -0.048585">
+            <inertial pos="0.0935038 5.51649e-05 -0.00588398" quat="0.502092 0.497603 0.498549 0.501741" mass="0.167648" diaginertia="0.00141274 0.00139842 3.13254e-05"/>
+            <joint name="fr_leg_3" pos="0 0 0" axis="0 1 0" range="0 1.84" actuatorfrcrange="-60 60"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="fr_leg_l3"/>
+            <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="fr_leg_3"/> -->
+            <geom size="0.012 0.012 0.035" pos="0.065 0 -0.0" quat="0.997888 0 0.8649542 0" type="box" rgba="0.89804 0.91765 0.92941 1"/>
+            <geom size="0.012 0.012 0.03" pos="0.135 0 0.0" quat="0.992198 0 1.1949542 0" type="box" rgba="0.89804 0.91765 0.92941 1"/>
+            <geom pos="0.20148 0 -0.018511" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="fr_leg_ee"/>
+            <!-- <geom pos="0.20148 0 -0.018511" quat="1 0 0 0" type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="fr_leg_ee"/> -->
+            <body name="fr_leg_ee" pos="0.20148 0 -0.018511">
+              <geom name="fr_leg_ee" size="0.02" pos="0 0 0" rgba="1 0.8 0.4 0.4"/>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="hl_leg_l1" pos="-0.149 0.05 -0.045">
+        <inertial pos="-0.052471 -0.002473 -0.00033617" quat="0.483008 0.517633 0.532221 0.464221" mass="0.74136" diaginertia="0.00084717 0.000699968 0.000591862"/>
+        <joint name="hl_leg_1" pos="0 0 0" axis="1 0 0" range="-0.837 0.837"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="hl_leg_l1"/>
+        <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="hl_leg_1"/> -->
+        <body name="hl_leg_l2" pos="-0.0565 0 0">
+          <inertial pos="-0.020267 0.079245 -0.0023193" quat="-0.312335 0.730674 -0.182613 0.578977" mass="1.0843" diaginertia="0.00427815 0.00388481 0.00103204"/>
+          <joint name="hl_leg_2" pos="0 0 0" axis="0 1 0" range="-3.49 2.042" actuatorfrcrange="-60 60"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="hl_leg_l2"/>
+          <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="hl_leg_2"/> -->
+          <body name="hl_leg_l3" pos="-0.19401 0.112 -0.048585">
+            <inertial pos="0.0935038 5.51631e-05 -0.00588398" quat="0.502092 0.497603 0.498549 0.501741" mass="0.167648" diaginertia="0.00141274 0.00139842 3.13254e-05"/>
+            <joint name="hl_leg_3" pos="0 0 0" axis="0 1 0" range="0 1.84" actuatorfrcrange="-60 60"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="hl_leg_l3"/>
+            <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="hl_leg_3"/> -->
+            <geom size="0.012 0.012 0.035" pos="0.065 0 -0.0" quat="0.997888 0 0.8649542 0" type="box" rgba="0.89804 0.91765 0.92941 1"/>
+            <geom size="0.012 0.012 0.03" pos="0.135 0 0.0" quat="0.992198 0 1.1949542 0" type="box" rgba="0.89804 0.91765 0.92941 1"/>
+            <geom pos="0.20148 0 -0.018511" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="hl_leg_ee"/>
+            <!-- <geom pos="0.20148 0 -0.018511" quat="1 0 0 0" type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="hl_leg_ee"/> -->
+            <body name="hl_leg_ee" pos="0.20148 0 -0.018511">
+              <geom name="hl_leg_ee" size="0.02" pos="0 0 0" rgba="1 0.8 0.4 0.4"/>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="hr_leg_l1" pos="-0.149 -0.05 -0.045">
+        <inertial pos="-0.052471 0.002447 -0.000306" quat="0.464472 0.532006 0.517404 0.483248" mass="0.74076" diaginertia="0.00084717 0.000699958 0.000590872"/>
+        <joint name="hr_leg_1" pos="0 0 0" axis="1 0 0" range="-0.837 0.837"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="hr_leg_l1"/>
+        <!-- <geom type="mesh" rgba="1 1 1 1" mesh="hr_leg_1"/> -->
+        <body name="hr_leg_l2" pos="-0.0565 0 0">
+          <inertial pos="-0.023051 -0.080149 -0.0029038" quat="0.314085 0.731009 0.203397 0.570619" mass="1.0885" diaginertia="0.0048113 0.00432278 0.00102792"/>
+          <joint name="hr_leg_2" pos="0 0 0" axis="0 1 0" range="-3.49 2.042" actuatorfrcrange="-60 60"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="hr_leg_l2"/>
+          <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="hr_leg_2"/> -->
+          <body name="hr_leg_l3" pos="-0.19401 -0.112 -0.048585">
+            <inertial pos="0.0935038 5.51631e-05 -0.00588398" quat="0.502092 0.497603 0.498549 0.501741" mass="0.167648" diaginertia="0.00141274 0.00139842 3.13254e-05"/>
+            <joint name="hr_leg_3" pos="0 0 0" axis="0 1 0" range="0 1.84" actuatorfrcrange="-60 60"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.953 0.890 0.839 1" mesh="hr_leg_l3"/>
+            <!-- <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="hr_leg_3"/> -->
+            <geom size="0.012 0.012 0.035" pos="0.065 0 -0.0" quat="0.997888 0 0.8649542 0" type="box" rgba="0.89804 0.91765 0.92941 1"/>
+            <geom size="0.012 0.012 0.03" pos="0.135 0 0.0" quat="0.992198 0 1.1949542 0" type="box" rgba="0.89804 0.91765 0.92941 1"/>
+            <geom pos="0.20148 0 -0.018511" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="hr_leg_ee"/>
+            <!-- <geom pos="0.20148 0 -0.018511" quat="1 0 0 0" type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="hr_leg_ee"/> -->
+            <body name="hr_leg_ee" pos="0.20148 0 -0.018511">
+              <geom name="hr_leg_ee" size="0.02" pos="0 0 0" rgba="1 0.8 0.4 0.4"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+      <position class='leg_1' name='fl_leg_1'  joint='fl_leg_1'  />
+      <position class='leg_2' name='fl_leg_2'  joint='fl_leg_2'   />
+      <position class='leg_3' name='fl_leg_3'  joint='fl_leg_3'   />
+
+      <position class='leg_1' name='fr_leg_1'  joint='fr_leg_1'   />
+      <position class='leg_2' name='fr_leg_2'  joint='fr_leg_2'   />
+      <position class='leg_3' name='fr_leg_3'  joint='fr_leg_3'   />
+
+      <position class='leg_1' name='hl_leg_1'  joint='hl_leg_1'   />
+      <position class='leg_2' name='hl_leg_2'  joint='hl_leg_2'   />
+      <position class='leg_3' name='hl_leg_3'  joint='hl_leg_3'   />
+      
+      <position class='leg_1' name='hr_leg_1'  joint='hr_leg_1'   />
+      <position class='leg_2' name='hr_leg_2'  joint='hr_leg_2'   />
+      <position class='leg_3' name='hr_leg_3'  joint='hr_leg_3'   />
+  </actuator>
+
+  <sensor>
+
+      <framepos      name='position' objtype='site' noise='0.0001' objname='imu'/>
+      <framequat     name='orientation' objtype='site' noise='0.0001' objname='imu'/>
+      <velocimeter   name='linear-velocity'     site='imu' noise='0.0001' cutoff='30'/>
+      <gyro          name='angular-velocity'    site='imu' noise='0.0005' cutoff='34.9'/>
+      <accelerometer name='linear-acceleration' site='imu' noise='0.0005' cutoff='157'/>
+      <magnetometer  name='magnetometer'        site='imu'/>
+
+      <subtreecom    name="subtree_base" body="base_link"/>
+      <subtreelinvel name="subtreelinvel_base" body="base_link"/>
+      <subtreeangmom name="subtreeangmom_base" body="base_link"/>
+
+      <framelinvel   name="framelinvel_fl_global" objtype="geom" objname="fl_leg_ee" cutoff='10'/>
+      <framelinvel   name="framelinvel_fr_global" objtype="geom" objname="fr_leg_ee" cutoff='10'/>
+      <framelinvel   name="framelinvel_hl_global" objtype="geom" objname="hl_leg_ee" cutoff='10'/>
+      <framelinvel   name="framelinvel_hr_global" objtype="geom" objname="hr_leg_ee" cutoff='10'/>
+
+      <framelinacc   name="framelinacc_fl_global" objtype="geom" objname="fr_leg_ee" cutoff='100'/>
+      <framelinacc   name="framelinacc_fr_global" objtype="geom" objname="fr_leg_ee" cutoff='100'/>
+      <framelinacc   name="framelinacc_hl_global" objtype="geom" objname="hl_leg_ee" cutoff='100'/>
+      <framelinacc   name="framelinacc_hr_global" objtype="geom" objname="hr_leg_ee" cutoff='100'/>
+
+  </sensor>
+
+</mujoco>
+
+
+
+

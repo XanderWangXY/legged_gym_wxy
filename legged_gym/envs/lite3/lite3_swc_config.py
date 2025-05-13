@@ -162,6 +162,12 @@ class Lite3SWCCfg( LeggedRobotCfg ):
             energy_penalty = 1.
             style_consistency = 1.
 
+            foot_contact = -1
+            undesired_contact = -1
+            joint_position_limit = -1
+            joint_velocity_limit = -1
+            joint_torque_limit = -1
+
     class commands:
         curriculum = False
         max_curriculum = 1.
