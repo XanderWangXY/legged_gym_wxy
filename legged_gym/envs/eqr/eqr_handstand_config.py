@@ -84,8 +84,8 @@ class EqrFootStandCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'joint': 18.}  # [N*m/rad]
-        damping = {'joint': 0.6}     # [N*m*s/rad]
+        stiffness = {'joint': 22.}  # [N*m/rad]
+        damping = {'joint': 0.7}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
@@ -97,7 +97,7 @@ class EqrFootStandCfg( LeggedRobotCfg ):
         foot_name = "leg_lee"
         # shoulder_name = "shoulder"
         # penalize_contacts_on = ["THIGH", "shoulder", "SHANK"]
-        penalize_contacts_on = ["leg_l2", "leg_l3"]
+        penalize_contacts_on = ["leg_l1","leg_l2", "leg_l3"]
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
         terminate_after_contacts_on = ["base_link"]
         self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter

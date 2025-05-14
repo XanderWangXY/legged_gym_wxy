@@ -75,13 +75,15 @@
           rgba="0.75294 0.75294 0.75294 1" />
       </material>
     </visual>
-    <!-- <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
         <mesh
           filename="../meshes/fl_leg_l1.STL" />
       </geometry>
-    </collision> -->
+    </collision>
   </link>
   <joint
     name="fl_leg_1_joint"
@@ -132,12 +134,12 @@
       </material>
     </visual>
     <collision>
-      <!-- <origin xyz="0 0 0" rpy="0 0 0" /> -->
-      <origin xyz="0 0 -0.08"/>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
-       <!--  <mesh
-          filename="../meshes/fl_leg_l2.STL" /> -->
-          <box size="0.02 0.02 0.16"/>
+        <mesh
+          filename="../meshes/fl_leg_l2.STL" />
       </geometry>
     </collision>
   </link>
@@ -190,12 +192,12 @@
       </material>
     </visual>
     <collision>
-      <!-- <origin xyz="0 0 0" rpy="0 0 0" /> -->
-      <origin xyz="0 0 -0.09"/>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
-       <!--  <mesh
-          filename="../meshes/fl_leg_l3.STL" />-->
-          <box size="0.02 0.02 0.18"/>
+        <mesh
+          filename="../meshes/fl_leg_l3.STL" />
       </geometry>
     </collision>
   </link>
@@ -238,7 +240,8 @@
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
-        <sphere radius="0.022" />
+        <mesh
+          filename="../meshes/fl_leg_ee.STL" />
       </geometry>
       <material
         name="">
@@ -300,13 +303,15 @@
           rgba="0.75294 0.75294 0.75294 1" />
       </material>
     </visual>
-    <!-- <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
         <mesh
           filename="../meshes/fr_leg_l1.STL" />
       </geometry>
-    </collision> -->
+    </collision>
   </link>
   <joint
     name="fr_leg_1_joint"
@@ -357,11 +362,11 @@
       </material>
     </visual>
     <collision>
-      <!-- <origin xyz="0 0 0" rpy="0 0 0" /> -->
-      <origin xyz="0 0 -0.08"/>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
-        <!-- <mesh filename="../meshes/fr_thigh.STL" /> -->
-        <box size="0.02 0.02 0.16"/>
+        <mesh filename="../meshes/fr_leg_l2.STL" />
       </geometry>
     </collision>
   </link>
@@ -414,11 +419,11 @@
       </material>
     </visual>
     <collision>
-      <!-- <origin xyz="0 0 0" rpy="0 0 0" /> -->
-      <origin xyz="0 0 -0.09"/>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
-        <!-- <mesh filename="../meshes/fr_shank_collision.STL" /> -->
-        <box size="0.02 0.02 0.18"/>
+        <mesh filename="../meshes/fr_leg_l3.STL" />
       </geometry>
     </collision>
   </link>
@@ -524,13 +529,15 @@
           rgba="0.75294 0.75294 0.75294 1" />
       </material>
     </visual>
-    <!-- <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
         <mesh
           filename="../meshes/hl_leg_l1.STL" />
       </geometry>
-    </collision> -->
+    </collision>
   </link>
   <joint
     name="hl_leg_1_joint"
@@ -581,11 +588,11 @@
       </material>
     </visual>
     <collision>
-      <!-- <origin xyz="0 0 0" rpy="0 0 0" /> -->
-      <origin xyz="0 0 -0.08"/>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
-        <!-- <mesh filename="../meshes/hl_thigh.STL" /> -->
-        <box size="0.02 0.02 0.16"/>
+        <mesh filename="../meshes/hl_leg_l2.STL" />
       </geometry>
     </collision>
   </link>
@@ -638,11 +645,11 @@
       </material>
     </visual>
     <collision>
-      <!-- <origin xyz="0 0 0" rpy="0 0 0" /> -->
-      <origin xyz="0 0 -0.09"/>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
-        <!-- <mesh filename="../meshes/hl_shank_collision.STL" /> -->
-        <box size="0.02 0.02 0.18"/>
+        <mesh filename="../meshes/hl_leg_l3.STL" />
       </geometry>
     </collision>
   </link>
@@ -748,13 +755,15 @@
           rgba="1 1 1 1" />
       </material>
     </visual>
-    <!-- <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
         <mesh
           filename="../meshes/hr_leg_l1.STL" />
       </geometry>
-    </collision> -->
+    </collision>
   </link>
   <joint
     name="hr_leg_1_joint"
@@ -805,8 +814,9 @@
       </material>
     </visual>
     <collision>
-      <!-- <origin xyz="0 0 0" rpy="0 0 0" /> -->
-      <origin xyz="0 0 -0.08"/>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
       <geometry>
         <mesh
           filename="../meshes/hr_leg_l2.STL" />
