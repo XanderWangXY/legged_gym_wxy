@@ -38,7 +38,7 @@ class Lite3AMPCfg( LeggedRobotCfg ):
 
     class env(LeggedRobotCfg.env):
         num_observations = 45#235-187
-        num_privileged_obs = 187+36+3+1+3+4+4  # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        num_privileged_obs = 36+3+1+3+4+4  # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
         num_envs = 4096
         reference_state_initialization = False
@@ -67,7 +67,7 @@ class Lite3AMPCfg( LeggedRobotCfg ):
     class terrain( LeggedRobotCfg.terrain ):
         mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
         # rough terrain only:
-        measure_heights = True
+        measure_heights = False
         num_rows= 10 # number of terrain rows (levels)
         num_cols = 20 # number of terrain cols (types)
         # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete, stepping stones, wave]
@@ -81,7 +81,7 @@ class Lite3AMPCfg( LeggedRobotCfg ):
         randomize_base_mass = True
         added_mass_range = [-1., 3.]
         randomize_com_offset = True
-        com_offset_range = [[-0.05, 0.1], [-0.03, 0.03], [-0.03, 0.1]]
+        com_offset_range = [[-0.05, 0.08], [-0.03, 0.03], [-0.03, 0.08]]
         randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         randomize_Kp_factor = True
@@ -146,7 +146,7 @@ class Lite3AMPCfg( LeggedRobotCfg ):
         resampling_time = 10. # time before command are changed[s]
         heading_command = False # if true: compute ang vel command from heading error
         class ranges:
-            lin_vel_x = [-1.0, 2.5] # min max [m/s]
+            lin_vel_x = [-1.0, 3.0] # min max [m/s]
             lin_vel_y = [-0.5, 0.5]   # min max [m/s]
             ang_vel_yaw = [-1.57, 1.57]    # min max [rad/s]
             heading = [-3.14, 3.14]

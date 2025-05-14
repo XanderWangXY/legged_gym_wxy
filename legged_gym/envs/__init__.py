@@ -53,8 +53,10 @@ from .lite3.lite3_pie_config import Lite3PIECfg,Lite3PIECfgPPO
 from .lite3.lite3_swc import Lite3SWC
 from .lite3.lite3_swc_config import Lite3SWCCfg,Lite3SWCCfgPPO
 
-from .eqr.eqr import EQR
+from .eqr.eqr import Eqr
+from .eqr.eqr_skill import EQRSkill
 from .eqr.eqr_config import EqrRoughCfg, EqrRoughCfgPPO
+from .eqr.eqr_handstand_config import EqrFootStandCfg, EqrHandStandCfg, EqrSkillCfgPPO
 
 import os
 
@@ -75,4 +77,6 @@ task_registry.register( "lite3dreamwaq", Lite3DreamWaQ, Lite3DreamWaQCfg(), Lite
 task_registry.register( "lite3pie", Lite3PIE, Lite3PIECfg(), Lite3PIECfgPPO() )
 task_registry.register( "lite3swc", Lite3SWC, Lite3SWCCfg(), Lite3SWCCfgPPO() )
 
-task_registry.register( "eqr", LeggedRobot, EqrRoughCfg(), EqrRoughCfgPPO() )
+task_registry.register( "eqr", Eqr, EqrRoughCfg(), EqrRoughCfgPPO() )
+task_registry.register( "eqrhandstand", EQRSkill, EqrHandStandCfg(), EqrSkillCfgPPO() )
+task_registry.register( "eqrfootstand", EQRSkill, EqrFootStandCfg(), EqrSkillCfgPPO() )

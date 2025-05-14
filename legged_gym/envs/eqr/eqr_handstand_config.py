@@ -29,11 +29,12 @@
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
+from legged_gym.envs.eqr.eqr_config import EqrRoughCfgPPO
 
-class EqrRoughCfg( LeggedRobotCfg ):
+class EqrFootStandCfg( LeggedRobotCfg ):
     class env(LeggedRobotCfg.env):
         num_observations = 45#235-187
-        num_privileged_obs = 187+36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        num_privileged_obs = 36+3+1+3+4+4+1 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
         num_envs = 4096
         task_name = 'eqr'
@@ -56,9 +57,9 @@ class EqrRoughCfg( LeggedRobotCfg ):
         }
 
     class terrain( LeggedRobotCfg.terrain ):
-        mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
+        mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
         # rough terrain only:
-        measure_heights = True
+        measure_heights = False
         num_rows= 10 # number of terrain rows (levels)
         num_cols = 20 # number of terrain cols (types)
         # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
@@ -83,8 +84,8 @@ class EqrRoughCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'joint': 22.}  # [N*m/rad]
-        damping = {'joint': 0.7}     # [N*m*s/rad]
+        stiffness = {'joint': 18.}  # [N*m/rad]
+        damping = {'joint': 0.6}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
@@ -104,41 +105,120 @@ class EqrRoughCfg( LeggedRobotCfg ):
         restitution_offset_range = [-0.1, 0.1]
         compliance = 0.5
         flip_visual_attachments = False  # Some .obj meshes must be flipped from y-up to z-up
-  
+
     class rewards( LeggedRobotCfg.rewards ):
-        soft_dof_pos_limit = 0.9
-        base_height_target = 0.25
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        tracking_sigma = 0.25  # tracking reward = exp(-error^2/sigma)
+        soft_dof_pos_limit = 5.  # percentage of urdf limits, values above this limit are penalized
+        soft_dof_vel_limit = 1.
+        soft_torque_limit = 29.
+        base_height_target = 0.42
+        max_contact_force = 100.
         class scales( LeggedRobotCfg.rewards.scales ):
+            termination = -0.0
+            tracking_lin_vel_skill = 3.  # 20.0
+            tracking_ang_vel_skill = 1.5  # 6.66
+            tracking_lin_vel = 0.0
+            tracking_ang_vel = 0.
+            lin_vel_z = -0.0
+            ang_vel_xy = -0.0
+            orientation = -0.0
             torques = -0.0002
-            dof_pos_limits = -10.0
-            stand_still = -0.0#5
+            torque_limits = -1
+            dof_vel = -0.
+            dof_acc = -2.5e-7
+            base_height = 0.#-0.5
+            feet_air_time = 0.0
+            collision = -1.
+            feet_stumble = -0.0
+            action_rate = -0.01
+            stand_still = -0.
+            handstand_feet_height_exp = 10.0
+            handstand_feet_on_air = 1.0
+            handstand_feet_air_time = 1.0
+            handstand_orientation_l2 = -1.0
+            hipy_angle_threshold = 0.5
+            #both_feet_air = -1.0
+
+    class commands:
+        curriculum = False
+        max_curriculum = 1.
+        num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        resampling_time = 10. # time before command are changed[s]
+        heading_command = True # if true: compute ang vel command from heading error
+        class ranges:
+            lin_vel_x = [-0.8, 0.8] # min max [m/s]
+            lin_vel_y = [-0.8, 0.8]   # min max [m/s]
+            ang_vel_yaw = [-1, 1]    # min max [rad/s]
+            heading = [-3.14, 3.14]
+
+    class params:  # 参数单独放在params类中
+        handstand_feet_height_exp = {
+            "target_height": 0.65,
+            "std": 0.5
+        }
+        handstand_orientation_l2 = {
+            "target_gravity": [-1.0, 0., -0.0]
+        }
+        handstand_feet_air_time = {
+            "threshold": 5.0
+        }
+        feet_name_reward={
+            "feet_name" : "f.*lee"
+        }
+        hip_name_reward={
+            "hipy_name" : "f.*_leg_1_joint"
+        }
+        jump_height_goal={
+            "jump_height_goal":0.7,
+            "std": 0.25
+        }
+        epsilon_h = {
+            "epsilon_h": 0.08
+        }
+
 
     class student:
         student = False
-        num_envs = 512
+        num_envs = 192
 
-class EqrRoughCfgPPO( LeggedRobotCfgPPO ):
+    class skill_commands:
+        num_skill_commands = 3
+
+class EqrHandStandCfg( EqrFootStandCfg ):
+    class rewards(EqrFootStandCfg.rewards):
+        base_height_target = 0.42
+        class scales( EqrFootStandCfg.rewards.scales ):
+            handstand_feet_height_exp = 10.0
+            action_rate = -0.01
+            hipy_angle_threshold = 0.
+
+    class params(EqrFootStandCfg.params):
+        handstand_feet_height_exp = {
+            "target_height": 0.65,
+            "std": 0.5
+        }
+        handstand_orientation_l2 = {
+            "target_gravity": [1., 0., -0.0]
+        }
+        feet_name_reward = {
+            "feet_name": "h.*lee"
+        }
+
+class EqrSkillCfgPPO( EqrRoughCfgPPO ):
     class policy(LeggedRobotCfgPPO.policy):
-        terrain_hidden_dims = [512, 256, 128]
-        terrain_input_dims = 187
-        terrain_latent_dims = 36
-        encoder_latent_dims = 12
-    class algorithm( LeggedRobotCfgPPO.algorithm ):
-        entropy_coef = 0.01
-        student = False
-        dagger_beta = 1.0
-        num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
-
+        terrain_hidden_dims = None
+        terrain_input_dims = 0
+        terrain_latent_dims = 0
+        encoder_latent_dims = 36
     class student:
         num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
         num_steps_per_env = 120
         num_learning_epochs = 1
 
-    class runner( LeggedRobotCfgPPO.runner ):
-        max_iterations = 15000  # number of policy updates
+    class runner( EqrRoughCfgPPO.runner ):
+        max_iterations = 20000  # number of policy updates
         run_name = ''
-        experiment_name = 'rough_eqr'
+        experiment_name = 'eqr_skill'
         description = 'test'
         num_steps_per_env = 24
-
-  

@@ -70,6 +70,8 @@ class LeggedRobot(BaseTask):
         self.init_done = False
         self._parse_cfg(self.cfg)
         self.task_name = 'lite3'
+        if hasattr(self.cfg.env, "task_name") and self.cfg.env.task_name:
+            self.task_name = self.cfg.env.task_name
         super().__init__(self.cfg, sim_params, physics_engine, sim_device, headless)
 
         if not self.headless:
@@ -368,6 +370,8 @@ class LeggedRobot(BaseTask):
                 self.cfg.asset.restitution_offset_range[1], (1, 1),
                 device=self.device)
             if 'lite' in self.task_name:
+                feet_list = [3, 7, 11, 15]
+            elif 'eqr' in self.task_name:
                 feet_list = [3, 7, 11, 15]
             else:
                 raise Exception("")
