@@ -94,8 +94,9 @@ def play(args):
     train_cfg.runner.resume = True
     env.env.friction_coeffs = None
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
-    if env_cfg.student.student is not None and env_cfg.student.student and env.cfg.depth.use_camera:
-        policy = ppo_runner.alg.get_student_vision_inference_policy(device=env.device)
+    if env_cfg.student.student is not None and env_cfg.student.student and hasattr(env.cfg, 'depth') and env.cfg.depth:
+        if env.cfg.depth.use_camera:
+            policy = ppo_runner.alg.get_student_vision_inference_policy(device=env.device)
     elif env_cfg.student.student is not None and env_cfg.student.student:
         policy = ppo_runner.alg.get_student_inference_policy(device=env.device)  #####
     elif 'dream' in env.env.task_name:
@@ -131,17 +132,18 @@ def play(args):
         # actions = policy(obs.detach())
         # obs, _, rews, dones, infos = env.step(actions.detach())
         with torch.no_grad():
-            if env_cfg.student.student is not None and env_cfg.student.student and env.cfg.depth.use_camera:
-                if infos["depth"] != None:
-                    obs[:, :2] = 0
+            if env_cfg.student.student is not None and env_cfg.student.student and hasattr(env.cfg, 'depth') and env.cfg.depth:
+                if env.cfg.depth.use_camera:
+                    if infos["depth"] != None:
+                        obs[:, :2] = 0
 
-                    depth_image = infos["depth"].clone()
-                    # depth_latent_student = self.alg.depth_encoder(depth_image, obs_prop_depth)
-                    depth_latent_and_yaw = depth_encoder(depth_image, obs)
-                    depth_latent_student = depth_latent_and_yaw[:, :-2]
-                    yaw = depth_latent_and_yaw[:, -2:]
-                obs[:, :2] = yaw
-                actions, _ = policy(obs, obs_history, depth_latent_student)
+                        depth_image = infos["depth"].clone()
+                        # depth_latent_student = self.alg.depth_encoder(depth_image, obs_prop_depth)
+                        depth_latent_and_yaw = depth_encoder(depth_image, obs)
+                        depth_latent_student = depth_latent_and_yaw[:, :-2]
+                        yaw = depth_latent_and_yaw[:, -2:]
+                    obs[:, :2] = yaw
+                    actions, _ = policy(obs, obs_history, depth_latent_student)
 
             elif env_cfg.student.student is not None and env_cfg.student.student:
                 actions,_ = policy(obs, obs_history)##########

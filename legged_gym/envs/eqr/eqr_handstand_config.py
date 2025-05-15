@@ -116,10 +116,10 @@ class EqrFootStandCfg( LeggedRobotCfg ):
         max_contact_force = 100.
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = -0.0
-            tracking_lin_vel_skill = 3.  # 20.0
-            tracking_ang_vel_skill = 1.5  # 6.66
-            tracking_lin_vel = 0.0
-            tracking_ang_vel = 0.
+            tracking_lin_vel_skill = 0. # 20.0
+            tracking_ang_vel_skill = 0.  # 6.66
+            tracking_lin_vel = 3.
+            tracking_ang_vel = 1.5
             lin_vel_z = -0.0
             ang_vel_xy = -0.0
             orientation = -0.0
@@ -134,11 +134,12 @@ class EqrFootStandCfg( LeggedRobotCfg ):
             action_rate = -0.01
             stand_still = -0.
             handstand_feet_height_exp = 10.0
-            handstand_feet_on_air = 1.0
+            handstand_feet_on_air = 2.0
             handstand_feet_air_time = 1.0
             handstand_orientation_l2 = -1.0
-            hipy_angle_threshold = 0.5
+            hipy_angle_threshold = 0.
             #both_feet_air = -1.0
+            dof_pos_limits = -2
 
     class commands:
         curriculum = False
@@ -180,7 +181,7 @@ class EqrFootStandCfg( LeggedRobotCfg ):
 
     class student:
         student = False
-        num_envs = 192
+        num_envs = 512
 
     class skill_commands:
         num_skill_commands = 3
@@ -189,13 +190,18 @@ class EqrHandStandCfg( EqrFootStandCfg ):
     class rewards(EqrFootStandCfg.rewards):
         base_height_target = 0.42
         class scales( EqrFootStandCfg.rewards.scales ):
+            tracking_lin_vel_skill = 0.  # 20.0
+            tracking_ang_vel_skill = 0.  # 6.66
+            tracking_lin_vel = 3.0
+            tracking_ang_vel = 1.5
             handstand_feet_height_exp = 10.0
+            handstand_feet_on_air = 1.0
             action_rate = -0.01
             hipy_angle_threshold = 0.
 
     class params(EqrFootStandCfg.params):
         handstand_feet_height_exp = {
-            "target_height": 0.65,
+            "target_height": 0.70,
             "std": 0.5
         }
         handstand_orientation_l2 = {
