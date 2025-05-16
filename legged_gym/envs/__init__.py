@@ -57,6 +57,8 @@ from .eqr.eqr import Eqr
 from .eqr.eqr_skill import EQRSkill
 from .eqr.eqr_config import EqrRoughCfg, EqrRoughCfgPPO
 from .eqr.eqr_handstand_config import EqrFootStandCfg, EqrHandStandCfg, EqrSkillCfgPPO
+from .eqr.eqr_amp import EqrAMP
+from .eqr.eqr_amp_config import EqrAMPCfg, EqrAMPCfgPPO
 
 import os
 
@@ -80,3 +82,4 @@ task_registry.register( "lite3swc", Lite3SWC, Lite3SWCCfg(), Lite3SWCCfgPPO() )
 task_registry.register( "eqr", Eqr, EqrRoughCfg(), EqrRoughCfgPPO() )
 task_registry.register( "eqrhandstand", EQRSkill, EqrHandStandCfg(), EqrSkillCfgPPO() )
 task_registry.register( "eqrfootstand", EQRSkill, EqrFootStandCfg(), EqrSkillCfgPPO() )
+task_registry.register( "eqramp", EqrAMP, EqrAMPCfg(), EqrAMPCfgPPO() )

@@ -223,7 +223,7 @@ class RolloutStorage:
                 old_mu_batch = old_mu[batch_idx]
                 old_sigma_batch = old_sigma[batch_idx]
                 yield obs_batch, critic_observations_batch, privileged_obs_batch, obs_history_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, \
-                       old_actions_log_prob_batch, old_mu_batch, old_sigma_batch,None,None,None,None, None, (None, None), None
+                       old_actions_log_prob_batch, old_mu_batch, old_sigma_batch,(None, None), None
 
     def depth_mini_batch_generator(self, num_mini_batches, num_epochs=8):
 

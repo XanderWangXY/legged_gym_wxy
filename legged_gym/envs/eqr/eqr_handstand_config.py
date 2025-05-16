@@ -133,10 +133,10 @@ class EqrFootStandCfg( LeggedRobotCfg ):
             feet_stumble = -0.0
             action_rate = -0.01
             stand_still = -0.
-            handstand_feet_height_exp = 10.0
+            handstand_feet_height_exp = 12.0
             handstand_feet_on_air = 2.0
             handstand_feet_air_time = 1.0
-            handstand_orientation_l2 = -1.0
+            handstand_orientation_l2 = -2.0
             hipy_angle_threshold = 0.
             #both_feet_air = -1.0
             dof_pos_limits = -2
@@ -155,7 +155,7 @@ class EqrFootStandCfg( LeggedRobotCfg ):
 
     class params:  # 参数单独放在params类中
         handstand_feet_height_exp = {
-            "target_height": 0.65,
+            "target_height": 0.70,
             "std": 0.5
         }
         handstand_orientation_l2 = {

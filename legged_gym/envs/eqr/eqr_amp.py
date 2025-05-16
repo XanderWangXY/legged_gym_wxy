@@ -77,7 +77,7 @@ class EqrAMP(BaseTask):
         self.cfg = cfg
         self.sim_params = sim_params
         self.height_samples = None
-        self.debug_viz = False
+        self.debug_viz = True
         self.init_done = False
         self._parse_cfg(self.cfg)
         self.task_name = 'eqr_amp'
@@ -1069,22 +1069,65 @@ class EqrAMP(BaseTask):
             Default behaviour: draws height measurement points
         """
         # draw height lines
-        if not self.terrain.cfg.measure_heights:
+        # if not self.terrain.cfg.measure_heights:
+        #     return
+        # self.gym.clear_lines(self.viewer)
+        # self.gym.refresh_rigid_body_state_tensor(self.sim)
+        # sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 0, 0))
+        # for i in range(self.num_envs):
+        #     base_pos = (self.root_states[i, :3]).cpu().numpy()
+        #     if self.add_noise:
+        #         heights = self.noised_height_samples[i].cpu().numpy()
+        #     else:
+        #         heights = self.measured_heights[i].cpu().numpy()
+        #     height_points = quat_apply_yaw(self.base_quat[i].repeat(heights.shape[0]), self.height_points[i]).cpu().numpy()
+        #     for j in range(heights.shape[0]):
+        #         x = height_points[j, 0] + base_pos[0]
+        #         y = height_points[j, 1] + base_pos[1]
+        #         z = heights[j]
+        #         sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
+        #         gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose)
+
+        # 如果没有viewer则返回
+        if not self.viewer:
             return
+
+        # 清除之前的线条
         self.gym.clear_lines(self.viewer)
         self.gym.refresh_rigid_body_state_tensor(self.sim)
-        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 1, 0))
+
+        # 四条腿使用不同颜色
+        leg_colors = [
+            (1, 0, 0),  # 红色 - 右前腿
+            (0, 1, 0),  # 绿色 - 右后腿
+            (0, 0, 1),  # 蓝色 - 左前腿
+            (1, 1, 0)  # 黄色 - 左后腿
+        ]
+
+        # 在循环中使用对应颜色
+        # 获取当前所有环境中机器人的足端位置
+        foot_positions = self.foot_positions_in_base_frame(self.dof_pos)  # shape: [num_envs, 12]
+
+        # 对每个环境循环
         for i in range(self.num_envs):
-            base_pos = (self.root_states[i, :3]).cpu().numpy()
-            heights = self.measured_heights[i].cpu().numpy()
-            #heights = self.heights[i].cpu().numpy()
-            height_points = quat_apply_yaw(self.base_quat[i].repeat(heights.shape[0]), self.height_points[i]).cpu().numpy()
-            for j in range(heights.shape[0]):
-                x = height_points[j, 0] + base_pos[0]
-                y = height_points[j, 1] + base_pos[1]
-                z = heights[j]
-                sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
-                gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose) 
+            # 获取机器人基座位置和姿态
+            base_pos = self.root_states[i, :3]
+            base_quat = self.root_states[i, 3:7]
+
+            # 获取当前环境下四条腿的位置
+            feet_pos = foot_positions[i].reshape(4, 3)
+
+            # 对每条腿循环
+            for j in range(4):
+                # 使用四元数将局部坐标系中的位置转换到世界坐标系
+                world_pos = quat_apply(base_quat, feet_pos[j]) + base_pos
+                world_pos = world_pos.cpu().numpy()
+
+                # 创建变换并绘制小球
+                sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=leg_colors[j])
+
+                sphere_pose = gymapi.Transform(gymapi.Vec3(*world_pos), r=None)
+                gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose)
 
     def _init_height_points(self):
         """ Returns points at which the height measurments are sampled (in base frame)

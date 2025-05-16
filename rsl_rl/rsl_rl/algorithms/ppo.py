@@ -197,7 +197,7 @@ class PPO:
             generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
         for (obs_batch, critic_obs_batch, privileged_obs_batch, obs_history_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
             old_mu_batch, old_sigma_batch
-             ,depth_image_batch,hidden_states_batch, depth_masks_batch,obs_recurrent_batch, priv_obs_recurrent_batch
+             #,depth_image_batch,hidden_states_batch, depth_masks_batch,obs_recurrent_batch, priv_obs_recurrent_batch
              , hid_states_batch, masks_batch) in generator:
 
 
