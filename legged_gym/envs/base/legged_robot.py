@@ -364,20 +364,16 @@ class LeggedRobot(BaseTask):
             [List[gymapi.RigidShapeProperties]]: Modified rigid shape properties
         """
         for s in range(len(props)):
-            props[s].friction = self.cfg.terrain.static_friction
             random_foot_restitution = self.cfg.asset.restitution_mean + torch_rand_float(
                 self.cfg.asset.restitution_offset_range[0],
                 self.cfg.asset.restitution_offset_range[1], (1, 1),
                 device=self.device)
-            if 'lite' in self.task_name:
-                feet_list = [3, 7, 11, 15]
-            elif 'eqr' in self.task_name:
-                feet_list = [3, 7, 11, 15]
-            else:
-                raise Exception("")
-            if s in feet_list:
-                props[s].restitution = random_foot_restitution
-                props[s].compliance = self.cfg.asset.compliance
+            # random_compliance = self.cfg.asset.compliance + torch_rand_float(
+            #     self.cfg.asset.compliance_offset_range[0],
+            #     self.cfg.asset.compliance_offset_range[1], (1, 1),
+            #     device=self.device)
+            props[s].restitution = random_foot_restitution
+            props[s].compliance = self.cfg.asset.compliance
 
         if self.cfg.domain_rand.randomize_friction:
             if env_id==0:

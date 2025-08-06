@@ -77,7 +77,7 @@ class Lite3AMP(BaseTask):
         self.cfg = cfg
         self.sim_params = sim_params
         self.height_samples = None
-        self.debug_viz = False
+        self.debug_viz = True
         self.init_done = False
         self._parse_cfg(self.cfg)
         self.task_name = 'lite3amp'
@@ -700,7 +700,6 @@ class Lite3AMP(BaseTask):
         noise_vec[6:9] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
         noise_vec[9:21] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
         noise_vec[21:33] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-        noise_vec[6:9] = noise_scales.gravity * noise_level
         noise_vec[33:45] = 0.
         # noise_vec[9:12] = 0. # commands
         # noise_vec[12:24] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
@@ -1069,22 +1068,65 @@ class Lite3AMP(BaseTask):
             Default behaviour: draws height measurement points
         """
         # draw height lines
-        if not self.terrain.cfg.measure_heights:
+        # if not self.terrain.cfg.measure_heights:
+        #     return
+        # self.gym.clear_lines(self.viewer)
+        # self.gym.refresh_rigid_body_state_tensor(self.sim)
+        # sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 0, 0))
+        # for i in range(self.num_envs):
+        #     base_pos = (self.root_states[i, :3]).cpu().numpy()
+        #     if self.add_noise:
+        #         heights = self.noised_height_samples[i].cpu().numpy()
+        #     else:
+        #         heights = self.measured_heights[i].cpu().numpy()
+        #     height_points = quat_apply_yaw(self.base_quat[i].repeat(heights.shape[0]), self.height_points[i]).cpu().numpy()
+        #     for j in range(heights.shape[0]):
+        #         x = height_points[j, 0] + base_pos[0]
+        #         y = height_points[j, 1] + base_pos[1]
+        #         z = heights[j]
+        #         sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
+        #         gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose)
+
+        # 如果没有viewer则返回
+        if not self.viewer:
             return
+
+        # 清除之前的线条
         self.gym.clear_lines(self.viewer)
         self.gym.refresh_rigid_body_state_tensor(self.sim)
-        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 1, 0))
+
+        # 四条腿使用不同颜色
+        leg_colors = [
+            (1, 0, 0),  # 红色 - 右前腿
+            (0, 1, 0),  # 绿色 - 右后腿
+            (0, 0, 1),  # 蓝色 - 左前腿
+            (1, 1, 0)  # 黄色 - 左后腿
+        ]
+
+        # 在循环中使用对应颜色
+        # 获取当前所有环境中机器人的足端位置
+        foot_positions = self.foot_positions_in_base_frame(self.dof_pos)  # shape: [num_envs, 12]
+
+        # 对每个环境循环
         for i in range(self.num_envs):
-            base_pos = (self.root_states[i, :3]).cpu().numpy()
-            heights = self.measured_heights[i].cpu().numpy()
-            #heights = self.heights[i].cpu().numpy()
-            height_points = quat_apply_yaw(self.base_quat[i].repeat(heights.shape[0]), self.height_points[i]).cpu().numpy()
-            for j in range(heights.shape[0]):
-                x = height_points[j, 0] + base_pos[0]
-                y = height_points[j, 1] + base_pos[1]
-                z = heights[j]
-                sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
-                gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose) 
+            # 获取机器人基座位置和姿态
+            base_pos = self.root_states[i, :3]
+            base_quat = self.root_states[i, 3:7]
+
+            # 获取当前环境下四条腿的位置
+            feet_pos = foot_positions[i].reshape(4, 3)
+
+            # 对每条腿循环
+            for j in range(4):
+                # 使用四元数将局部坐标系中的位置转换到世界坐标系
+                world_pos = quat_apply(base_quat, feet_pos[j]) + base_pos
+                world_pos = world_pos.cpu().numpy()
+
+                # 创建变换并绘制小球
+                sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=leg_colors[j])
+
+                sphere_pose = gymapi.Transform(gymapi.Vec3(*world_pos), r=None)
+                gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose)
 
     def _init_height_points(self):
         """ Returns points at which the height measurments are sampled (in base frame)
@@ -1232,3 +1274,44 @@ class Lite3AMP(BaseTask):
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+
+class Lite3AMPRough(Lite3AMP):
+    def compute_privileged_observations(self):
+        """ Computes privileged observations
+        """
+        contact_states = torch.norm(self.sensor_forces, dim=2) > 1.
+        #print(contact_states)
+        # contact_states = torch.norm(self.sensor_forces[:, :, :2], dim=2) > 1. # todo
+        # contact_forces = self.sensor_forces.flatten(1)
+        # contact_normals = self.contact_normal
+        if self.friction_coeffs is not None:
+            friction_coefficients = self.friction_coeffs.squeeze(-1).repeat(1, 4).to(self.device)
+        else:
+            friction_coefficients = torch.tensor(self.cfg.terrain.static_friction).repeat(self.num_envs, 4).to(self.device)
+
+        # thigh_and_shank_contact = torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1
+        external_forces_and_torques = torch.cat((self.push_forces[:, 0, :], self.push_torques[:, 0, :]), dim=-1)
+        # # airtime = self.feet_air_time
+        # # self.privileged_obs_buf = torch.cat(
+        # #     (contact_states * self.priv_obs_scales.contact_state,
+        # #      contact_forces * self.priv_obs_scales.contact_force,
+        # #      contact_normals * self.priv_obs_scales.contact_normal,
+        # #      friction_coefficients * self.priv_obs_scales.friction,
+        # #      thigh_and_shank_contact * self.priv_obs_scales.thigh_and_shank_contact_state,
+        # #      external_forces_and_torques * self.priv_obs_scales.external_wrench,
+        # #      airtime * self.priv_obs_scales.airtime),
+        # #     dim=-1)
+
+        self.privileged_obs_buf = torch.cat((
+            self.heights.squeeze(-1),
+            #self.base_ang_vel * self.obs_scales.ang_vel,
+             contact_states * self.priv_obs_scales.contact_state,
+             friction_coefficients * self.priv_obs_scales.friction,
+             #external_forces_and_torques * self.priv_obs_scales.external_wrench,
+             (self.mass_payloads - 6) * self.priv_obs_scales.mass_payload,  # payload, 1
+             self.com_displacements * self.priv_obs_scales.com_displacement,  # com_displacements, 3
+             (self.motor_strengths - 1) * self.priv_obs_scales.motor_strength,  # motor strength, 12
+             (self.Kp_factors - 1) * self.priv_obs_scales.kp_factor,  # Kp factor, 12
+             (self.Kd_factors - 1) * self.priv_obs_scales.kd_factor,  # Kd factor, 12
+            self.base_lin_vel * self.obs_scales.lin_vel,
+        ), dim=1)

@@ -81,7 +81,7 @@ class Lite3AMPCfg( LeggedRobotCfg ):
         randomize_base_mass = True
         added_mass_range = [-1., 3.]
         randomize_com_offset = True
-        com_offset_range = [[-0.05, 0.08], [-0.03, 0.03], [-0.03, 0.08]]
+        com_offset_range = [[-0.02, 0.08], [-0.02, 0.02], [-0.03, 0.06]]
         randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         randomize_Kp_factor = True
@@ -150,6 +150,41 @@ class Lite3AMPCfg( LeggedRobotCfg ):
             lin_vel_y = [-0.5, 0.5]   # min max [m/s]
             ang_vel_yaw = [-1.57, 1.57]    # min max [rad/s]
             heading = [-3.14, 3.14]
+
+class Lite3AMPRoughCfg( Lite3AMPCfg ):
+
+    class env(Lite3AMPCfg.env):
+        num_observations = 45#235-187
+        num_privileged_obs = 36+3+1+3+4+4+187  # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
+        num_observation_history = 50
+        num_envs = 4096
+        reference_state_initialization = False
+        reference_state_initialization_prob = 0.85
+        amp_motion_files = MOTION_FILES
+
+    class terrain(Lite3AMPCfg.terrain):
+        mesh_type = 'trimesh'  # "heightfield" # none, plane, heightfield or trimesh
+        # rough terrain only:
+        measure_heights = True
+        num_rows = 10  # number of terrain rows (levels)
+        num_cols = 20  # number of terrain cols (types)
+        # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete, stepping stones, wave]
+        terrain_proportions = [0.0, 0.2, 0.3, 0.25, 0.25, 0., 0.0, 0.]
+        # trimesh only:
+        slope_treshold = 0.75  # slopes above this threshold will be corrected to vertical surfaces
+
+    class commands(Lite3AMPCfg.commands):
+        curriculum = False
+        max_curriculum = 1.
+        num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        resampling_time = 10. # time before command are changed[s]
+        heading_command = True # if true: compute ang vel command from heading error
+        class ranges:
+            lin_vel_x = [-1.0, 2.0] # min max [m/s]
+            lin_vel_y = [-1.0, 1.0]   # min max [m/s]
+            ang_vel_yaw = [-1, 1]    # min max [rad/s]
+            heading = [-3.14, 3.14]
+
 
 class Lite3AMPCfgPPO( LeggedRobotCfgPPO ):
     runner_class_name = 'AMPOnPolicyRunner'

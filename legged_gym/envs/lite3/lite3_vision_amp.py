@@ -44,18 +44,25 @@ from typing import Tuple, Dict
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs.base.base_task import BaseTask
-# from legged_gym.utils.terrain import Terrain
+from legged_gym.utils.terrain import Terrain
 # from legged_gym.utils.my_terrain import get_terrain_cls
 from legged_gym.utils.extreme_terrain import ExtremeTerrain
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
 from scipy.spatial.transform import Rotation as R
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg
-
+from rsl_rl.datasets.motion_loader import AMPLoader
 from tqdm import tqdm
 import cv2
 import matplotlib.pyplot as plt
 
+
+COM_OFFSET = torch.tensor([0.0, 0.00, 0.000])
+HIP_OFFSETS = torch.tensor([
+    [0.1745, 0.062, 0.],
+    [0.1745, -0.062, 0.],
+    [-0.1745, 0.062, 0.],
+    [-0.1745, -0.062, 0.]]) + COM_OFFSET
 
 def euler_from_quaternion(quat_angle):
     """
@@ -82,7 +89,7 @@ def euler_from_quaternion(quat_angle):
 
     return roll_x, pitch_y, yaw_z  # in radians
 
-class Lite3Parkour(BaseTask):
+class Lite3VisionAMP(BaseTask):
     def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
         """ Parses the provided config file,
             calls create_sim() (which creates, simulation, terrain and environments),
@@ -99,10 +106,10 @@ class Lite3Parkour(BaseTask):
         self.cfg = cfg
         self.sim_params = sim_params
         self.height_samples = None
-        self.debug_viz = True
+        self.debug_viz = False
         self.init_done = False
         self._parse_cfg(self.cfg)
-        self.task_name = 'lite3parkour'
+        self.task_name = 'lite3vision_amp'
         super().__init__(self.cfg, sim_params, physics_engine, sim_device, headless)
 
         self.resize_transform = torchvision.transforms.Resize((self.cfg.depth.resized[1], self.cfg.depth.resized[0]), 
@@ -116,6 +123,9 @@ class Lite3Parkour(BaseTask):
         self.init_done = True
         self.total_env_steps_counter = 0
 
+        if self.cfg.env.reference_state_initialization:
+            self.amp_loader = AMPLoader(motion_files=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt)
+
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
         self.post_physics_step()
 
@@ -125,7 +135,7 @@ class Lite3Parkour(BaseTask):
     def reset(self):
         """ Reset all robots"""
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
-        obs, privileged_obs, _, _, _, _ = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
+        obs, privileged_obs, _, _, _, _, _ = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
         return obs, privileged_obs
 
     def step(self, actions):
@@ -148,19 +158,19 @@ class Lite3Parkour(BaseTask):
             self.gym.refresh_dof_state_tensor(self.sim)
             self.gym.refresh_actor_root_state_tensor(self.sim)
 
-        self.post_physics_step()
+        reset_env_ids, terminal_amp_states = self.post_physics_step()
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.cfg.normalization.clip_observations
         self.obs_buf = torch.clip(self.obs_buf, -clip_obs, clip_obs)
         if self.privileged_obs_buf is not None:
             self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
-        self.extras["delta_yaw_ok"] = self.delta_yaw < 0.6
+        # self.extras["delta_yaw_ok"] = self.delta_yaw < 0.6
         if self.cfg.depth.use_camera and self.count % self.cfg.depth.update_interval == 0:
             self.extras["depth"] = self.depth_buffer[:, -2]  # have already selected last one
         else:
             self.extras["depth"] = None
         #self.extras["depth"] = self.depth_buffer[:, -2]  # have already selected last one
-        return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras, self.extras["depth"]
+        return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras, reset_env_ids, terminal_amp_states
 
     def normalize_depth_image(self, depth_image):
         depth_image = depth_image * -1
@@ -279,17 +289,18 @@ class Lite3Parkour(BaseTask):
         self.contact_filt = torch.logical_or(self.contact, self.last_contacts)
         self.last_contacts = self.contact
 
-        self._update_goals()
+        # self._update_goals()
         self._post_physics_step_callback()
 
         # compute observations, rewards, resets, ...
         self.check_termination()
         self.compute_reward()
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
+        terminal_amp_states = self.get_amp_observations()[env_ids]
         self.reset_idx(env_ids)
 
-        self.cur_goals = self._gather_cur_goals()
-        self.next_goals = self._gather_cur_goals(future=1)
+        # self.cur_goals = self._gather_cur_goals()
+        # self.next_goals = self._gather_cur_goals(future=1)
 
         self.update_depth_buffer()
         self.compute_observations()  # in some cases a simulation step might be required to refresh some obs (for example body positions)
@@ -303,34 +314,36 @@ class Lite3Parkour(BaseTask):
 
         if self.viewer and self.enable_viewer_sync and self.debug_viz:
             self.gym.clear_lines(self.viewer)
-            # self._draw_debug_vis()
-            self._draw_goals()
-            self._draw_cameras()
+            self._draw_debug_vis()
+            self._draw_feet()
+            # self._draw_goals()
             if self.cfg.depth.use_camera:
                 window_name = "Depth Image"
                 cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
                 cv2.imshow("Depth Image", self.depth_buffer[self.lookat_id, -1].cpu().numpy() + 0.5)
                 cv2.waitKey(1)
+                self._draw_cameras()
+        return env_ids, terminal_amp_states
 
     def check_termination(self):
         """ Check if environments need to be reset
         """
-        # self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+        self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
         # self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
         # self.reset_buf |= self.time_out_buf
-        self.reset_buf = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
-        roll_cutoff = torch.abs(self.rpy[:,0]) > 1.5
-        pitch_cutoff = torch.abs(self.rpy[:,1]) > 1.5
-        reach_goal_cutoff = self.cur_goal_idx >= self.cfg.terrain.num_goals
-        height_cutoff = self.root_states[:, 2] < -0.25
+        # self.reset_buf = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        # roll_cutoff = torch.abs(self.rpy[:,0]) > 1.5
+        # pitch_cutoff = torch.abs(self.rpy[:,1]) > 1.5
+        # reach_goal_cutoff = self.cur_goal_idx >= self.cfg.terrain.num_goals
+        # height_cutoff = self.root_states[:, 2] < -0.25
 
         self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
-        self.time_out_buf |= reach_goal_cutoff
+        # self.time_out_buf |= reach_goal_cutoff
 
         self.reset_buf |= self.time_out_buf
-        self.reset_buf |= roll_cutoff
-        self.reset_buf |= pitch_cutoff
-        self.reset_buf |= height_cutoff
+        # self.reset_buf |= roll_cutoff
+        # self.reset_buf |= pitch_cutoff
+        # self.reset_buf |= height_cutoff
 
     def reset_idx(self, env_ids):
         """ Reset some environments.
@@ -352,8 +365,16 @@ class Lite3Parkour(BaseTask):
             self.update_command_curriculum(env_ids)
         
         # reset robot states
-        self._reset_dofs(env_ids)
-        self._reset_root_states(env_ids)
+        # self._reset_dofs(env_ids)
+        # self._reset_root_states(env_ids)
+            # reset robot states
+        if self.cfg.env.reference_state_initialization:
+            frames = self.amp_loader.get_full_frame_batch(len(env_ids))
+            self._reset_dofs_amp(env_ids, frames)
+            self._reset_root_states_amp(env_ids, frames)
+        else:
+            self._reset_dofs(env_ids)
+            self._reset_root_states(env_ids)
         self.episode_v_integral[env_ids].zero_()
         self.episode_w_integral[env_ids].zero_()
         # self.pmtg.reset(env_ids)
@@ -380,8 +401,8 @@ class Lite3Parkour(BaseTask):
         self.feet_air_time[env_ids] = 0.
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = 1
-        self.cur_goal_idx[env_ids] = 0
-        self.reach_goal_timer[env_ids] = 0
+        # self.cur_goal_idx[env_ids] = 0
+        # self.reach_goal_timer[env_ids] = 0
 
         # fill extras
         self.extras["episode"] = {}
@@ -421,12 +442,12 @@ class Lite3Parkour(BaseTask):
     def compute_observations(self):
         """ Computes observations
         """
-        if self.count % 5 == 0:
-            self.delta_yaw = self.target_yaw - self.rpy[:, 2]
-            self.delta_next_yaw = self.next_target_yaw - self.rpy[:, 2]
+        # if self.count % 5 == 0:
+        #     self.delta_yaw = self.target_yaw - self.rpy[:, 2]
+        #     self.delta_next_yaw = self.next_target_yaw - self.rpy[:, 2]
         self.obs_buf = torch.cat((  #self.base_lin_vel * self.obs_scales.lin_vel,
-                                    self.delta_yaw[:, None],
-                                    self.delta_next_yaw[:, None],
+                                    # self.delta_yaw[:, None],
+                                    # self.delta_next_yaw[:, None],
                                     self.commands[:, :3] * self.commands_scale,
                                     #self.projected_gravity,
                                     self.rpy * self.obs_scales.orientation,
@@ -486,6 +507,14 @@ class Lite3Parkour(BaseTask):
             self.base_lin_vel * self.obs_scales.lin_vel,
         ), dim=1)
         # print(self.privileged_obs_buf.shape)
+    def get_amp_observations(self):
+        joint_pos = self.dof_pos
+        foot_pos = self.foot_positions_in_base_frame(self.dof_pos).to(self.device)
+        base_lin_vel = self.base_lin_vel
+        base_ang_vel = self.base_ang_vel
+        joint_vel = self.dof_vel
+        z_pos = self.root_states[:, 2:3]
+        return torch.cat((joint_pos, foot_pos, base_lin_vel, base_ang_vel, joint_vel, z_pos), dim=-1)
 
     def create_sim(self):
         """ Creates simulation, terrain and evironments
@@ -496,8 +525,8 @@ class Lite3Parkour(BaseTask):
         self.sim = self.gym.create_sim(self.sim_device_id, self.graphics_device_id, self.physics_engine, self.sim_params)
         mesh_type = self.cfg.terrain.mesh_type
         if mesh_type in ['heightfield', 'trimesh']:
-            #self.terrain = Terrain(self.cfg.terrain, self.num_envs)
-            self.terrain = ExtremeTerrain(self.cfg.terrain, self.num_envs)
+            self.terrain = Terrain(self.cfg.terrain, self.num_envs)
+            #self.terrain = ExtremeTerrain(self.cfg.terrain, self.num_envs)
         if mesh_type=='plane':
             self._create_ground_plane()
         elif mesh_type=='heightfield':
@@ -639,8 +668,9 @@ class Lite3Parkour(BaseTask):
         if self.cfg.commands.heading_command:
             forward = quat_apply(self.base_quat, self.forward_vec)
             heading = torch.atan2(forward[:, 1], forward[:, 0])
-            self.commands[:, 2] = torch.clip(0.8*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
-            self.commands[:, 2] *= torch.abs(self.commands[:, 2]) > self.cfg.commands.ang_vel_clip
+            # self.commands[:, 2] = torch.clip(0.8*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
+            # self.commands[:, 2] *= torch.abs(self.commands[:, 2]) > self.cfg.commands.ang_vel_clip
+            self.commands[:, 2] = torch.clip(0.5 * wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
 
         if self.cfg.terrain.measure_heights:
             if self.count % self.cfg.depth.update_interval == 0:
@@ -658,12 +688,12 @@ class Lite3Parkour(BaseTask):
             env_ids (List[int]): Environments ids for which new commands are needed
         """
         self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=self.device).squeeze(1)
-        #self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+        self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=self.device).squeeze(1)
         if self.cfg.commands.heading_command:
             self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
         else:
             self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
-            self.commands[env_ids, 2] *= torch.abs(self.commands[env_ids, 2]) > self.cfg.commands.ang_vel_clip
+            # self.commands[env_ids, 2] *= torch.abs(self.commands[env_ids, 2]) > self.cfg.commands.ang_vel_clip
 
         # fixed_commands = [0.6, 0.0, 0.0]
         # self.commands[env_ids, 0] = torch.tensor([fixed_commands[0]]).repeat(len(env_ids)).to(device=self.device)
@@ -671,7 +701,7 @@ class Lite3Parkour(BaseTask):
         # self.commands[env_ids, 2] = torch.tensor([fixed_commands[2]]).repeat(len(env_ids)).to(device=self.device)
 
         # set small commands to zero
-        self.commands[env_ids, :2] *= torch.abs(self.commands[env_ids, 0:1]) > self.cfg.commands.lin_vel_clip
+        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -714,6 +744,23 @@ class Lite3Parkour(BaseTask):
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
                                               gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
+    def _reset_dofs_amp(self, env_ids, frames):
+        """ Resets DOF position and velocities of selected environmments
+        Positions are randomly selected within 0.5:1.5 x default positions.
+        Velocities are set to zero.
+
+        Args:
+            env_ids (List[int]): Environemnt ids
+            frames: AMP frames to initialize motion with
+        """
+        self.dof_pos[env_ids] = AMPLoader.get_joint_pose_batch(frames)
+        self.dof_vel[env_ids] = AMPLoader.get_joint_vel_batch(frames)
+        env_ids_int32 = env_ids.to(dtype=torch.int32)
+        self.gym.set_dof_state_tensor_indexed(self.sim,
+                                              gymtorch.unwrap_tensor(self.dof_state),
+                                              gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
     def _reset_root_states(self, env_ids):
         """ Resets ROOT states position and velocities of selected environmments
             Sets base position based on the curriculum
@@ -748,6 +795,27 @@ class Lite3Parkour(BaseTask):
                                                      gymtorch.unwrap_tensor(self.root_states),
                                                      gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
 
+    def _reset_root_states_amp(self, env_ids, frames):
+        """ Resets ROOT states position and velocities of selected environmments
+            Sets base position based on the curriculum
+            Selects randomized base velocities within -0.5:0.5 [m/s, rad/s]
+        Args:
+            env_ids (List[int]): Environemnt ids
+        """
+        # base position
+        root_pos = AMPLoader.get_root_pos_batch(frames)
+        root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
+        self.root_states[env_ids, :3] = root_pos
+        root_orn = AMPLoader.get_root_rot_batch(frames)
+        self.root_states[env_ids, 3:7] = root_orn
+        self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
+        self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
+
+        env_ids_int32 = env_ids.to(dtype=torch.int32)
+        self.gym.set_actor_root_state_tensor_indexed(self.sim,
+                                                     gymtorch.unwrap_tensor(self.root_states),
+                                                     gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. 
         """
@@ -774,15 +842,15 @@ class Lite3Parkour(BaseTask):
         if not self.init_done:
             # don't change on initial reset
             return
-        # distance = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-        # # robots that walked far enough progress to harder terains
-        # move_up = distance > self.terrain.env_length / 2
-        # # robots that walked less than half of their required distance go to simpler terrains
-        # move_down = (distance < torch.norm(self.commands[env_ids, :2], dim=1)*self.max_episode_length_s*0.5) * ~move_up
-        dis_to_origin = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-        threshold = self.commands[env_ids, 0] * self.cfg.env.episode_length_s
-        move_up = dis_to_origin > 0.8 * threshold
-        move_down = dis_to_origin < 0.4 * threshold
+        distance = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
+        # robots that walked far enough progress to harder terains
+        move_up = distance > self.terrain.env_length / 2
+        # robots that walked less than half of their required distance go to simpler terrains
+        move_down = (distance < torch.norm(self.commands[env_ids, :2], dim=1)*self.max_episode_length_s*0.5) * ~move_up
+        # dis_to_origin = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
+        # threshold = self.commands[env_ids, 0] * self.cfg.env.episode_length_s
+        # move_up = dis_to_origin > 0.8 * threshold
+        # move_down = dis_to_origin < 0.4 * threshold
 
         self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
         # Robots that solve the last level are sent to a random one
@@ -790,13 +858,13 @@ class Lite3Parkour(BaseTask):
                                                    torch.randint_like(self.terrain_levels[env_ids], self.max_terrain_level),
                                                    torch.clip(self.terrain_levels[env_ids], 0)) # (the minumum level is zero)
         self.env_origins[env_ids] = self.terrain_origins[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
-        self.env_class[env_ids] = self.terrain_class[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
-
-        temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
-        last_col = temp[:, -1].unsqueeze(1)
-        self.env_goals[:] = torch.cat((temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1)[:]
-        self.cur_goals = self._gather_cur_goals()
-        self.next_goals = self._gather_cur_goals(future=1)
+        # self.env_class[env_ids] = self.terrain_class[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
+        #
+        # temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
+        # last_col = temp[:, -1].unsqueeze(1)
+        # self.env_goals[:] = torch.cat((temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1)[:]
+        # self.cur_goals = self._gather_cur_goals()
+        # self.next_goals = self._gather_cur_goals(future=1)
 
     def update_command_curriculum(self, env_ids):
         """ Implements a curriculum of increasing commands
@@ -897,7 +965,7 @@ class Lite3Parkour(BaseTask):
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
         self.last_torques = torch.zeros_like(self.torques)
         self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
-        self.reach_goal_timer = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        # self.reach_goal_timer = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
         self._resample_commands(torch.arange(self.num_envs, device=self.device, requires_grad=False))
         self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
@@ -976,6 +1044,36 @@ class Lite3Parkour(BaseTask):
         self.Kp_factors = torch.ones(self.num_envs, self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
         self.Kd_factors = torch.ones(self.num_envs, self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
 
+    def foot_position_in_hip_frame(self, angles, l_hip_sign=1):
+        # theta_ab, theta_hip, theta_knee = angles[:, 0], angles[:, 1], angles[:, 2]
+        # l_up = 0.2
+        # l_low = 0.2
+        # l_hip = 0.08505 * l_hip_sign
+        theta_ab, theta_hip, theta_knee = -angles[:, 0], -angles[:, 1], -angles[:, 2]
+        l_up = 0.2
+        l_low = 0.21
+        l_hip = 0.102 * l_hip_sign
+        leg_distance = torch.sqrt(l_up**2 + l_low**2 +
+                                2 * l_up * l_low * torch.cos(theta_knee))
+        eff_swing = theta_hip + theta_knee / 2
+
+        off_x_hip = -leg_distance * torch.sin(eff_swing)
+        off_z_hip = -leg_distance * torch.cos(eff_swing)
+        off_y_hip = l_hip
+
+        off_x = off_x_hip
+        off_y = torch.cos(theta_ab) * off_y_hip - torch.sin(theta_ab) * off_z_hip
+        off_z = torch.sin(theta_ab) * off_y_hip + torch.cos(theta_ab) * off_z_hip
+        return torch.stack([off_x, off_y, off_z], dim=-1)
+
+    def foot_positions_in_base_frame(self, foot_angles):
+        foot_positions = torch.zeros_like(foot_angles)
+        for i in range(4):
+            foot_positions[:, i * 3:i * 3 + 3].copy_(
+                self.foot_position_in_hip_frame(foot_angles[:, i * 3: i * 3 + 3], l_hip_sign=(-1)**(i)))
+        foot_positions = foot_positions + HIP_OFFSETS.reshape(12,).to(self.device)
+        return foot_positions
+
     def _prepare_reward_function(self):
         """ Prepares a list of reward functions, whcih will be called to compute the total reward.
             Looks for self._reward_<REWARD_NAME>, where <REWARD_NAME> are names of all non zero reward scales in the cfg.
@@ -1027,7 +1125,7 @@ class Lite3Parkour(BaseTask):
         hf_params.dynamic_friction = self.cfg.terrain.dynamic_friction
         hf_params.restitution = self.cfg.terrain.restitution
 
-        self.gym.add_heightfield(self.sim, self.terrain.heightsamples.flatten(order='C'), hf_params)
+        self.gym.add_heightfield(self.sim, self.terrain.heightsamples, hf_params)
         self.height_samples = torch.tensor(self.terrain.heightsamples).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
 
     def _create_trimesh(self):
@@ -1047,7 +1145,7 @@ class Lite3Parkour(BaseTask):
         self.gym.add_triangle_mesh(self.sim, self.terrain.vertices.flatten(order='C'), self.terrain.triangles.flatten(order='C'), tm_params)
         print("Trimesh added")
         self.height_samples = torch.tensor(self.terrain.heightsamples).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
-        self.x_edge_mask = torch.tensor(self.terrain.x_edge_mask).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
+        # self.x_edge_mask = torch.tensor(self.terrain.x_edge_mask).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
 
 
     def attach_camera(self, i, env_handle, actor_handle):
@@ -1066,10 +1164,6 @@ class Lite3Parkour(BaseTask):
             local_transform = gymapi.Transform()
 
             camera_position = np.copy(config.position)
-            # 为每个元素添加[-0.01, 0.01]的随机噪声
-            noise = np.random.uniform(low=-0.01, high=0.01, size=camera_position.shape)
-            camera_position = camera_position + noise
-
             camera_angle = np.random.uniform(config.angle[0], config.angle[1])
 
             local_transform.p = gymapi.Vec3(*camera_position)
@@ -1203,17 +1297,17 @@ class Lite3Parkour(BaseTask):
             self.terrain_origins = torch.from_numpy(self.terrain.env_origins).to(self.device).to(torch.float)
             self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
 
-            self.terrain_class = torch.from_numpy(self.terrain.terrain_type).to(self.device).to(torch.float)
-            self.env_class[:] = self.terrain_class[self.terrain_levels, self.terrain_types]
-
-            self.terrain_goals = torch.from_numpy(self.terrain.goals).to(self.device).to(torch.float)
-            self.env_goals = torch.zeros(self.num_envs, self.cfg.terrain.num_goals + self.cfg.env.num_future_goal_obs, 3, device=self.device, requires_grad=False)
-            self.cur_goal_idx = torch.zeros(self.num_envs, device=self.device, requires_grad=False, dtype=torch.long)
-            temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
-            last_col = temp[:, -1].unsqueeze(1)
-            self.env_goals[:] = torch.cat((temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1)[:]
-            self.cur_goals = self._gather_cur_goals()
-            self.next_goals = self._gather_cur_goals(future=1)
+            # self.terrain_class = torch.from_numpy(self.terrain.terrain_type).to(self.device).to(torch.float)
+            # self.env_class[:] = self.terrain_class[self.terrain_levels, self.terrain_types]
+            #
+            # self.terrain_goals = torch.from_numpy(self.terrain.goals).to(self.device).to(torch.float)
+            # self.env_goals = torch.zeros(self.num_envs, self.cfg.terrain.num_goals + self.cfg.env.num_future_goal_obs, 3, device=self.device, requires_grad=False)
+            # self.cur_goal_idx = torch.zeros(self.num_envs, device=self.device, requires_grad=False, dtype=torch.long)
+            # temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
+            # last_col = temp[:, -1].unsqueeze(1)
+            # self.env_goals[:] = torch.cat((temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1)[:]
+            # self.cur_goals = self._gather_cur_goals()
+            # self.next_goals = self._gather_cur_goals(future=1)
 
         else:
             self.custom_origins = False
@@ -1232,10 +1326,11 @@ class Lite3Parkour(BaseTask):
         self.obs_scales = self.cfg.normalization.obs_scales
         self.priv_obs_scales = self.cfg.normalization.priv_obs_scales
         self.reward_scales = class_to_dict(self.cfg.rewards.scales)
-        if self.cfg.commands.curriculum:
-            self.command_ranges = class_to_dict(self.cfg.commands.ranges)
-        else:
-            self.command_ranges = class_to_dict(self.cfg.commands.max_ranges)
+        # if self.cfg.commands.curriculum:
+        #     self.command_ranges = class_to_dict(self.cfg.commands.ranges)
+        # else:
+        #     self.command_ranges = class_to_dict(self.cfg.commands.max_ranges)
+        self.command_ranges = class_to_dict(self.cfg.commands.ranges)
         if self.cfg.terrain.mesh_type not in ['heightfield', 'trimesh']:
             self.cfg.terrain.curriculum = False
         self.max_episode_length_s = self.cfg.env.episode_length_s
@@ -1263,6 +1358,51 @@ class Lite3Parkour(BaseTask):
                 y = height_points[j, 1] + base_pos[1]
                 z = heights[j]
                 sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
+                gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose)
+
+    def _draw_feet(self):
+        """ Draws visualizations for dubugging (slows down simulation a lot).
+            Default behaviour: draws height measurement points
+        """
+        # 如果没有viewer则返回
+        if not self.viewer:
+            return
+
+        # 清除之前的线条
+        self.gym.clear_lines(self.viewer)
+        self.gym.refresh_rigid_body_state_tensor(self.sim)
+
+        # 四条腿使用不同颜色
+        leg_colors = [
+            (1, 0, 0),  # 红色 - 右前腿
+            (0, 1, 0),  # 绿色 - 右后腿
+            (0, 0, 1),  # 蓝色 - 左前腿
+            (1, 1, 0)  # 黄色 - 左后腿
+        ]
+
+        # 在循环中使用对应颜色
+        # 获取当前所有环境中机器人的足端位置
+        foot_positions = self.foot_positions_in_base_frame(self.dof_pos)  # shape: [num_envs, 12]
+
+        # 对每个环境循环
+        for i in range(self.num_envs):
+            # 获取机器人基座位置和姿态
+            base_pos = self.root_states[i, :3]
+            base_quat = self.root_states[i, 3:7]
+
+            # 获取当前环境下四条腿的位置
+            feet_pos = foot_positions[i].reshape(4, 3)
+
+            # 对每条腿循环
+            for j in range(4):
+                # 使用四元数将局部坐标系中的位置转换到世界坐标系
+                world_pos = quat_apply(base_quat, feet_pos[j]) + base_pos
+                world_pos = world_pos.cpu().numpy()
+
+                # 创建变换并绘制小球
+                sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=leg_colors[j])
+
+                sphere_pose = gymapi.Transform(gymapi.Vec3(*world_pos), r=None)
                 gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose)
 
     def _draw_goals(self):
@@ -1310,8 +1450,6 @@ class Lite3Parkour(BaseTask):
         camera_geom = gymutil.WireframeBoxGeometry(0.05, 0.05, 0.02, None, color=(0, 1, 1))
         # 朝向“箭头” —— 用细长盒子表示
         direction_geom = gymutil.WireframeBoxGeometry(0.2, 0.01, 0.01, None, color=(1, 0.5, 0))
-        # 采样点（小球表示）
-        point_geom = gymutil.WireframeSphereGeometry(0.015, 8, 8, None, color=(1, 0, 0))  # 红色小球
 
         for i in range(self.num_envs):
             # 机器人 base 的位置与姿态
@@ -1338,9 +1476,6 @@ class Lite3Parkour(BaseTask):
             direction_offset = cam_world_rot.rotate(gymapi.Vec3(0.15, 0, 0))  # 向前 0.15m
             dir_tf = gymapi.Transform(cam_world_pos + direction_offset, cam_world_rot)
             gymutil.draw_lines(direction_geom, self.gym, self.viewer, self.envs[i], dir_tf)
-
-            # 画出图像采样中心点（即相机光心）
-            gymutil.draw_lines(point_geom, self.gym, self.viewer, self.envs[i], cam_tf_world)
 
     def _init_height_points(self):
         """ Returns points at which the height measurments are sampled (in base frame)

@@ -40,7 +40,7 @@ class EqrAMPCfg( LeggedRobotCfg ):
         num_observations = 45#235-187
         num_privileged_obs = 36+3+1+3+4+4  # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
         num_observation_history = 50
-        num_envs = 40
+        num_envs = 4096
         reference_state_initialization = False
         reference_state_initialization_prob = 0.85
         amp_motion_files = MOTION_FILES
@@ -79,7 +79,7 @@ class EqrAMPCfg( LeggedRobotCfg ):
         randomize_base_mass = True
         added_mass_range = [-1., 3.]
         randomize_com_offset = True
-        com_offset_range = [[-0.05, 0.05], [-0.05, 0.05], [-0.05, 0.05]]
+        com_offset_range = [[-0.03, 0.08], [-0.02, 0.02], [-0.03, 0.03]]
         randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         randomize_Kp_factor = True
@@ -87,11 +87,15 @@ class EqrAMPCfg( LeggedRobotCfg ):
         randomize_Kd_factor = True
         Kd_factor_range = [0.8, 1.2]
 
+        joint_friction_range = [0.0, 0.2]
+        joint_damping_range = [0.0, 0.]
+        joint_armature_range = [0.0, 0.005]
+
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
         stiffness = {'joint': 22.}  # [N*m/rad]
-        damping = {'joint': 0.7}     # [N*m*s/rad]
+        damping = {'joint': 1.5}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
@@ -107,10 +111,15 @@ class EqrAMPCfg( LeggedRobotCfg ):
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
         terminate_after_contacts_on = ["base_link"]
         self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter
-        restitution_mean = 0.5
-        restitution_offset_range = [-0.1, 0.1]
+        restitution_mean = 0.2
+        restitution_offset_range = [-0.2, 0.2]
         compliance = 0.5
         flip_visual_attachments = False  # Some .obj meshes must be flipped from y-up to z-up
+
+    class params:  # 参数单独放在params类中
+        feet_name_reward={
+            "feet_name" : ".*lee"
+        }
 
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.9
@@ -153,6 +162,11 @@ class EqrAMPCfg( LeggedRobotCfg ):
         class viewer(LeggedRobotCfg.viewer):
             debug_viz = True
 
+    class noise(LeggedRobotCfg.noise):
+        class noise_scales(LeggedRobotCfg.noise.noise_scales):
+            ang_vel = 0.2
+            orientation = 0.5
+
 class EqrAMPCfgPPO( LeggedRobotCfgPPO ):
     runner_class_name = 'AMPOnPolicyRunner'
     class policy(LeggedRobotCfgPPO.policy):
@@ -174,7 +188,7 @@ class EqrAMPCfgPPO( LeggedRobotCfgPPO ):
         num_learning_epochs = 1
 
     class runner( LeggedRobotCfgPPO.runner ):
-        max_iterations = 50000  # number of policy updatesf
+        max_iterations = 30000  # number of policy updatesf
         run_name = ''
         description = 'test'
         num_steps_per_env = 24

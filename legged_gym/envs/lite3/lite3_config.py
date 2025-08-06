@@ -104,6 +104,7 @@ class Lite3RoughCfg( LeggedRobotCfg ):
         restitution_mean = 0.5
         restitution_offset_range = [-0.1, 0.1]
         compliance = 0.5
+        compliance_offset_range = [-0.1, 0.1]
   
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.9

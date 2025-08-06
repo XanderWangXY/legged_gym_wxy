@@ -72,7 +72,7 @@ class EqrRoughCfg( LeggedRobotCfg ):
         randomize_base_mass = True
         added_mass_range = [-1., 3.]
         randomize_com_offset = True
-        com_offset_range = [[-0.05, 0.05], [-0.05, 0.05], [-0.05, 0.05]]
+        com_offset_range = [[-0.03, 0.08], [-0.02, 0.02], [-0.03, 0.03]]
         randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         randomize_Kp_factor = True
@@ -80,11 +80,15 @@ class EqrRoughCfg( LeggedRobotCfg ):
         randomize_Kd_factor = True
         Kd_factor_range = [0.8, 1.2]
 
+        joint_friction_range = [0.0, 0.2]
+        joint_damping_range = [0.0, 0.0]
+        joint_armature_range = [0.0, 0.005]
+
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'joint': 22.}  # [N*m/rad]
-        damping = {'joint': 0.7}     # [N*m*s/rad]
+        stiffness = {'joint': 30.}  # [N*m/rad]
+        damping = {'joint': 1.8}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
@@ -100,8 +104,8 @@ class EqrRoughCfg( LeggedRobotCfg ):
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
         terminate_after_contacts_on = ["base_link"]
         self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter
-        restitution_mean = 0.5
-        restitution_offset_range = [-0.1, 0.1]
+        restitution_mean = 0.2
+        restitution_offset_range = [-0.2, 0.2]
         compliance = 0.5
         flip_visual_attachments = False  # Some .obj meshes must be flipped from y-up to z-up
   
@@ -130,7 +134,7 @@ class EqrRoughCfgPPO( LeggedRobotCfgPPO ):
         num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
 
     class student:
-        num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
+        num_mini_batches = 2  # mini batch size = num_envs*nsteps / nminibatches
         num_steps_per_env = 120
         num_learning_epochs = 1
 

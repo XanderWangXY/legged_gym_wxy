@@ -41,6 +41,10 @@ import torch
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
+    latent_save_path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name,
+                                    'depth_latent_log.txt')
+    latent_save_file = open(latent_save_path, 'w')
+
     # override some parameters for testing
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 100)
     env_cfg.terrain.num_rows = 5
@@ -69,17 +73,18 @@ def play(args):
                                         "large stairs up": 0.,
                                         "large stairs down": 0.,
                                         "parkour": 0.,
-                                        "parkour_hurdle": 0.3,
+                                        "parkour_hurdle": 0.,
                                         "parkour_flat": 0.,
-                                        "parkour_step": 0.3,
-                                        "parkour_gap": 0.4,
-                                        "demo": 0.}
+                                        "parkour_step": 0.,
+                                        "parkour_gap": 0.,
+                                        "demo": 1.}
 
         env_cfg.terrain.terrain_proportions = list(env_cfg.terrain.terrain_dict.values())
         env_cfg.terrain.curriculum = False
         env_cfg.terrain.max_difficulty = True
 
         env_cfg.depth.angle = [20, 25]
+        env_cfg.depth.position = [0.25, 0, 0.08]
         env_cfg.noise.add_noise = True
         env_cfg.domain_rand.randomize_friction = True
         env_cfg.domain_rand.push_robots = False
@@ -94,6 +99,15 @@ def play(args):
     train_cfg.runner.resume = True
     env.env.friction_coeffs = None
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
+    # 加载 vision encoder（放在 play() 开头初始化时）
+    vision_encoder_path = "/home/ehr/wxy/legged_gym_wxy/logs/parkour_lite3/Jun12_17-51-04_student_standard/traced/vision_encoder_with_memory.pt"
+    vision_encoder = torch.jit.load(vision_encoder_path).to(ppo_runner.device)
+    vision_encoder.eval()
+    # 载入导出的 actor 网络
+    actor_exporter_path = "/home/ehr/wxy/legged_gym_wxy/logs/parkour_lite3/Jun12_17-51-04_student_standard/traced/actor_exported.pt"
+    actor_exporter = torch.jit.load(actor_exporter_path).to(ppo_runner.device)
+    actor_exporter.eval()
+
     if env_cfg.student.student is not None and env_cfg.student.student and hasattr(env.cfg, 'depth') and env.cfg.depth:
         if env.cfg.depth.use_camera:
             policy = ppo_runner.alg.get_student_vision_inference_policy(device=env.device)
@@ -139,11 +153,17 @@ def play(args):
 
                         depth_image = infos["depth"].clone()
                         # depth_latent_student = self.alg.depth_encoder(depth_image, obs_prop_depth)
-                        depth_latent_and_yaw = depth_encoder(depth_image, obs)
+                        depth_latent_and_yaw = vision_encoder(depth_image, obs)
                         depth_latent_student = depth_latent_and_yaw[:, :-2]
                         yaw = depth_latent_and_yaw[:, -2:]
                     obs[:, :2] = yaw
-                    actions, _ = policy(obs, obs_history, depth_latent_student)
+                    # 直接调用导出的 actor 模型
+                    # ✅ 存储 latent 到 txt
+                    latent_numpy = depth_latent_student.cpu().numpy()
+                    for latent_vector in latent_numpy:
+                        latent_str = ' '.join(['{:.8f}'.format(x) for x in latent_vector])
+                        latent_save_file.write(latent_str + '\n')
+                    actions = actor_exporter(obs, depth_latent_student, obs_history.flatten(1))
 
             elif env_cfg.student.student is not None and env_cfg.student.student:
                 actions,_ = policy(obs, obs_history)##########

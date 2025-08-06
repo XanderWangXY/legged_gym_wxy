@@ -39,8 +39,8 @@ from .cassie.cassie import Cassie
 from .cassie.cassie_config import CassieRoughCfg, CassieRoughCfgPPO
 from .a1.a1_config import A1RoughCfg, A1RoughCfgPPO
 from .lite3.lite3_config import Lite3RoughCfg,Lite3RoughCfgPPO
-from .lite3.lite3_amp_config import Lite3AMPCfg,Lite3AMPCfgPPO
-from .lite3.lite3_amp import Lite3AMP
+from .lite3.lite3_amp_config import Lite3AMPCfg,Lite3AMPCfgPPO,Lite3AMPRoughCfg
+from .lite3.lite3_amp import Lite3AMP, Lite3AMPRough
 from .lite3.lite3_handstand_config import Lite3HandStandCfg, Lite3FootStandCfg
 from .lite3.lite3_skill import Lite3Skill
 from .lite3.lite3_skill_config import Lite3SkillCfg, Lite3SkillCfgPPO
@@ -52,6 +52,8 @@ from .lite3.lite3_pie import Lite3PIE
 from .lite3.lite3_pie_config import Lite3PIECfg,Lite3PIECfgPPO
 from .lite3.lite3_swc import Lite3SWC
 from .lite3.lite3_swc_config import Lite3SWCCfg,Lite3SWCCfgPPO
+from .lite3.lite3_vision_amp import Lite3VisionAMP
+from .lite3.lite3_vision_amp_config import Lite3VisionAMPCfg, Lite3VisionAMPCfgPPO
 
 from .eqr.eqr import Eqr
 from .eqr.eqr_skill import EQRSkill
@@ -78,6 +80,8 @@ task_registry.register( "lite3parkour", Lite3Parkour, Lite3ParkourCfg(), Lite3Pa
 task_registry.register( "lite3dreamwaq", Lite3DreamWaQ, Lite3DreamWaQCfg(), Lite3DreamWaQCfgPPO() )
 task_registry.register( "lite3pie", Lite3PIE, Lite3PIECfg(), Lite3PIECfgPPO() )
 task_registry.register( "lite3swc", Lite3SWC, Lite3SWCCfg(), Lite3SWCCfgPPO() )
+task_registry.register( "lite3amp_vision", Lite3VisionAMP, Lite3VisionAMPCfg(), Lite3VisionAMPCfgPPO() )
+task_registry.register( "lite3amp_rough", Lite3AMPRough, Lite3AMPRoughCfg(), Lite3AMPCfgPPO() )
 
 task_registry.register( "eqr", Eqr, EqrRoughCfg(), EqrRoughCfgPPO() )
 task_registry.register( "eqrhandstand", EQRSkill, EqrHandStandCfg(), EqrSkillCfgPPO() )

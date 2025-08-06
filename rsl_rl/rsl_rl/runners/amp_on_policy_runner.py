@@ -40,7 +40,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch
 import wandb
 from rsl_rl.algorithms import AMPPPO, PPO
-from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
+from rsl_rl.modules import *
 from rsl_rl.env import VecEnv
 from rsl_rl.algorithms.amp_discriminator import AMPDiscriminator
 from rsl_rl.datasets.motion_loader import AMPLoader
@@ -77,12 +77,39 @@ class AMPOnPolicyRunner:
         #     num_critic_obs = self.env.num_obs
         num_critic_obs = self.env.num_obs
         actor_critic_class = eval(self.cfg["policy_class_name"]) # ActorCritic
-        actor_critic: ActorCritic = actor_critic_class( self.env.num_obs,
-                                                        num_critic_obs,
-                                                        self.env.num_obs_history,
-                                                        self.env.num_actions,
-                                                        self.env.num_privileged_obs,
-                                                        **self.policy_cfg).to(self.device)
+        if 'depth_encoder' in self.all_cfg and self.all_cfg['depth_encoder'] is not None:
+            self.depth_encoder_cfg = train_cfg["depth_encoder"]
+            self.if_depth = self.depth_encoder_cfg["if_depth"]
+            actor_critic: ActorCritic = actor_critic_class( self.env.num_obs,
+                                                            num_critic_obs,
+                                                            self.env.num_obs_history,
+                                                            self.env.num_actions,
+                                                            self.env.num_privileged_obs,
+                                                            self.depth_encoder_cfg,
+                                                            self.if_depth,
+                                                            **self.policy_cfg).to(self.device)
+        else:
+            self.if_depth = False
+            actor_critic: ActorCritic = actor_critic_class(self.env.num_obs,
+                                                           num_critic_obs,
+                                                           self.env.num_obs_history,
+                                                           self.env.num_actions,
+                                                           self.env.num_privileged_obs,
+                                                           **self.policy_cfg).to(self.device)
+
+        if 'depth_encoder' in self.all_cfg and self.all_cfg['depth_encoder'] is not None:
+            if self.if_depth:
+                depth_backbone = DepthOnlyFCBackbone58x87(env.cfg.env.num_observations,
+                                                          self.policy_cfg['terrain_latent_dims'],
+                                                          self.depth_encoder_cfg["hidden_dims"],
+                                                          )
+                depth_encoder = RecurrentDepthBackbone(depth_backbone, env.cfg, self.depth_encoder_cfg, train_cfg).to(self.device)
+                print(depth_encoder)
+            else:
+                depth_encoder = None
+        else:
+            self.depth_encoder_cfg = None
+            depth_encoder = None
 
         amp_data = AMPLoader(
             device, time_between_frames=self.env.dt, preload_transitions=True,
@@ -100,7 +127,7 @@ class AMPOnPolicyRunner:
         min_std = (
             torch.tensor(self.cfg["min_normalized_std"], device=self.device) *
             (torch.abs(self.env.dof_pos_limits[:, 1] - self.env.dof_pos_limits[:, 0])))
-        self.alg: PPO = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, **self.alg_cfg)
+        self.alg: PPO = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, depth_encoder, self.depth_encoder_cfg, device=self.device, min_std=min_std, **self.alg_cfg)
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
         self.save_interval = self.cfg["save_interval"]
 
@@ -109,6 +136,9 @@ class AMPOnPolicyRunner:
 
         #self.learn = self.learn if not train_cfg['algorithm']['student'] else self.learn_BC
         self.learn = self.learn if not train_cfg['algorithm']['student'] else self.dagger
+        if 'depth_encoder' in self.all_cfg and self.all_cfg['depth_encoder'] is not None:
+            if self.if_depth and train_cfg['algorithm']['student']:
+                self.learn = self.learn_vision
         # Log
         self.log_dir = log_dir+self.cfg['description']
         self.writer = None
@@ -136,6 +166,9 @@ class AMPOnPolicyRunner:
         obs, privileged_obs, obs_history = obs.to(self.device), privileged_obs.to(self.device), obs_history.to(self.device)
         amp_obs = self.env.get_amp_observations()
         amp_obs = amp_obs.to(self.device)
+        if self.if_depth:
+            depth_image = self.env.get_depth_image()
+            depth_image.to(self.device)
 
         self.alg.actor_critic.train() # switch to train mode (for dropout for example)
         self.alg.discriminator.train()
@@ -351,13 +384,14 @@ class AMPOnPolicyRunner:
                                locs['num_learning_iterations'] - locs['it']):.1f}s\n""")
         print(log_string)
 
-    def learn_BC(self, num_learning_iterations, init_at_random_ep_len=False):
+    def learn_vision(self, num_learning_iterations, init_at_random_ep_len=False):
         # initialize writer
         if self.log_dir is not None and self.writer is None:
             self.writer = SummaryWriter(log_dir=self.log_dir, flush_secs=10)
         tot_iter = self.current_learning_iteration + num_learning_iterations
         self.start_learning_iteration = copy(self.current_learning_iteration)
 
+        best_reward = 0
         ep_infos = []
         rewbuffer = deque(maxlen=100)
         lenbuffer = deque(maxlen=100)
@@ -366,71 +400,103 @@ class AMPOnPolicyRunner:
 
         obs_dict = self.env.get_observations()
         obs, privileged_obs, obs_history = obs_dict["obs"], obs_dict["privileged_obs"], obs_dict["obs_history"]
-        obs, privileged_obs, obs_history = obs.to(self.device), privileged_obs.to(self.device), obs_history.to(self.device)
+        obs, privileged_obs, obs_history = obs.to(self.device), privileged_obs.to(self.device), obs_history.to(
+            self.device)
+        # obs_history = torch.ones([96, 2250], device=self.device)
+        depth_image = self.env.depth_buffer.clone().to(self.device)[:, -1]
 
         infos = {}
-
-        self.alg.student_actor.load_state_dict(self.alg.actor_critic.actor.state_dict())
-        self.alg.student_adaptation.load_state_dict(self.alg.actor_critic.adaptation_module.state_dict())
+        infos["depth"] = self.env.depth_buffer.clone().to(self.device)[:, -1]
+        infos["delta_yaw_ok"] = torch.ones(self.env.num_envs, dtype=torch.bool, device=self.device)
 
         self.alg.student_actor.train()
         self.alg.student_adaptation.train()
+        self.alg.depth_encoder.train()
 
         num_pretrain_iter = 0
+        self.env.env.count = 0
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
-            adaptation_latent_buffer = []
-            env_latent_buffer = []
+
             actions_teacher_buffer = []
             actions_student_buffer = []
+
+            yaw_buffer_student = []
+            yaw_buffer_teacher = []
+            delta_yaw_ok_buffer = []
+
             for i in range(self.cfg['num_steps_per_env']):
+                if infos["depth"] != None:
+                    obs_prop_depth = obs.clone()
+                    obs_prop_depth[:, :2] = 0
+
+                    depth_image = infos["depth"].clone()
+                    #depth_latent_student = self.alg.depth_encoder(depth_image, obs_prop_depth)
+                    depth_latent_and_yaw = self.alg.depth_encoder(depth_image, obs_prop_depth)
+                    depth_latent_student = depth_latent_and_yaw[:, :-2]
+                    yaw = depth_latent_and_yaw[:, -2:]
+
+                    yaw_buffer_student.append(yaw)
+                    yaw_buffer_teacher.append(obs[:, :2])
+
                 with torch.no_grad():
-                    actions_teacher, latent_teacher = self.alg.actor_critic.act_expert(obs,privileged_obs)
+                    actions_teacher, latent_teacher = self.alg.actor_critic.act_expert(obs, privileged_obs)
                     actions_teacher_buffer.append(actions_teacher)
-                    env_latent_buffer.append(latent_teacher)
 
-                latent_student = self.alg.student_adaptation(obs_history)
-                actions_student = self.alg.student_actor(torch.cat((obs, latent_student), dim=-1))
-
+                obs_student = obs.clone()
+                obs_his_student = obs_history.clone()
+                ###
+                obs_student[infos["delta_yaw_ok"], :2] = yaw.detach()[infos["delta_yaw_ok"]]
+                delta_yaw_ok_buffer.append(torch.nonzero(infos["delta_yaw_ok"]).size(0) / infos["delta_yaw_ok"].numel())
+                ###
+                latent_student = self.alg.student_adaptation(obs_his_student)
+                actions_student = self.alg.student_actor(torch.cat((obs_student, depth_latent_student, latent_student), dim=-1))
                 actions_student_buffer.append(actions_student)
-                adaptation_latent_buffer.append(latent_student)
 
-                obs_dict, rewards, dones, infos = self.env.step(actions_student.detach())
+                if it < num_pretrain_iter:
+                    obs_dict, rewards, dones, infos = self.env.step(actions_teacher.detach())
+                else:
+                    obs_dict, rewards, dones, infos = self.env.step(actions_student.detach())
                 obs, privileged_obs, obs_history = obs_dict["obs"], obs_dict["privileged_obs"], obs_dict["obs_history"]
-                obs, privileged_obs, obs_history, rewards, dones = obs.to(self.device), privileged_obs.to(self.device), obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
+                obs, privileged_obs, obs_history, rewards, dones = obs.to(self.device), privileged_obs.to(
+                    self.device), obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
 
                 if self.log_dir is not None:
-                        # Book keeping
-                        if 'episode' in infos:
-                            ep_infos.append(infos['episode'])
-                        cur_reward_sum += rewards
-                        cur_episode_length += 1
-                        new_ids = (dones > 0).nonzero(as_tuple=False)
-                        rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
-                        lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
-                        cur_reward_sum[new_ids] = 0
-                        cur_episode_length[new_ids] = 0
+                    # Book keeping
+                    if 'episode' in infos:
+                        ep_infos.append(infos['episode'])
+                    cur_reward_sum += rewards
+                    cur_episode_length += 1
+                    new_ids = (dones > 0).nonzero(as_tuple=False)
+                    rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                    lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
+                    cur_reward_sum[new_ids] = 0
+                    cur_episode_length[new_ids] = 0
 
             stop = time.time()
             collection_time = stop - start
             start = stop
 
+            delta_yaw_ok_percentage = sum(delta_yaw_ok_buffer) / len(delta_yaw_ok_buffer)
+
             actions_teacher_buffer = torch.cat(actions_teacher_buffer, dim=0)
             actions_student_buffer = torch.cat(actions_student_buffer, dim=0)
-            env_latent_buffer = torch.cat(env_latent_buffer, dim=0)
-            adaptation_latent_buffer = torch.cat(adaptation_latent_buffer, dim=0)
+            yaw_buffer_student = torch.cat(yaw_buffer_student, dim=0)
+            yaw_buffer_teacher = torch.cat(yaw_buffer_teacher, dim=0)
 
             which = 'actor'
             actor_loss, adaptation_loss = self.alg.behavioral_cloning(
                 actions_student_buffer,
                 actions_teacher_buffer,
-                env_latent_buffer,
-                adaptation_latent_buffer,
+                yaw_buffer_student,
+                yaw_buffer_teacher,
                 which=which
             )
 
             stop = time.time()
             learn_time = stop - start
+
+            self.alg.depth_encoder.detach_hidden_states()
 
             if self.log_dir is not None:
                 self.log_student(locals())
@@ -579,9 +645,13 @@ class AMPOnPolicyRunner:
         if self.alg_cfg['student']:
             state_dict['student_actor_state_dict'] = self.alg.student_actor.state_dict()
             state_dict['student_adaptation_state_dict'] = self.alg.student_adaptation.state_dict()
+            if self.if_depth:
+                state_dict['depth_encoder_state_dict'] = self.alg.depth_encoder.state_dict()
         else:
             state_dict['student_actor_state_dict'] = self.alg.actor_critic.actor.state_dict()
             state_dict['student_adaptation_state_dict'] = self.alg.actor_critic.adaptation_module.state_dict()
+            if self.if_depth:
+                state_dict['depth_encoder_state_dict'] = self.alg.depth_encoder.state_dict()
         torch.save(state_dict, path)
 
     def load(self, path, load_optimizer=True):
@@ -601,13 +671,19 @@ class AMPOnPolicyRunner:
             else:
                 print("No saved student actor, Copying actor critic actor to student_actor...")
                 self.alg.student_actor.load_state_dict(self.alg.actor_critic.actor.state_dict())
+        if self.if_depth:
+            if 'depth_encoder_state_dict' not in loaded_dict:
+                warnings.warn("'depth_encoder' key does not exist, not loading depth_encoder...")
+            else:
+                print("Saved depth_encoder detected, loading...")
+                self.alg.depth_encoder.load_state_dict(loaded_dict['depth_encoder_state_dict'])
         if load_optimizer:
             self.alg.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
         self.current_learning_iteration = loaded_dict['iter']
         return loaded_dict['infos']
 
     def get_inference_policy(self, device=None):
-        self.alg.actor_critic.eval() # switch to evaluation mode (dropout for example)
+        self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
         if device is not None:
             self.alg.actor_critic.to(device)
         return self.alg.actor_critic.act_inference
@@ -617,3 +693,9 @@ class AMPOnPolicyRunner:
         if device is not None:
             self.alg.actor_critic.to(device)
         return self.alg.actor_critic.act_expert
+
+    def get_depth_encoder_inference_policy(self, device=None):
+        self.alg.depth_encoder.eval()
+        if device is not None:
+            self.alg.depth_encoder.to(device)
+        return self.alg.depth_encoder

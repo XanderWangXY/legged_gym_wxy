@@ -49,14 +49,15 @@ from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_fl
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg
 from rsl_rl.datasets.motion_loader import AMPLoader
+import re
 
 
 COM_OFFSET = torch.tensor([0.0, 0.00, 0.000])
 HIP_OFFSETS = torch.tensor([
-    [0.2055, 0.05, -0.045],
-    [0.2055, -0.05, -0.045],
-    [-0.2055, 0.05, -0.045],
-    [-0.2055, -0.05, -0.045]]) + COM_OFFSET
+    [0.2055, 0.05, 0.045],
+    [0.2055, -0.05, 0.045],
+    [-0.2055, 0.05, 0.045],
+    [-0.2055, -0.05, 0.045]]) + COM_OFFSET
 
 
 
@@ -354,7 +355,7 @@ class EqrAMP(BaseTask):
         # print(self.privileged_obs_buf.shape)
     def get_amp_observations(self):
         joint_pos = self.dof_pos
-        foot_pos = self.foot_positions_in_base_frame(self.dof_pos).to(self.device)
+        foot_pos = self.foot_positions_in_base_frame().to(self.device)
         base_lin_vel = self.base_lin_vel
         base_ang_vel = self.base_ang_vel
         joint_vel = self.dof_vel
@@ -700,7 +701,6 @@ class EqrAMP(BaseTask):
         noise_vec[6:9] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
         noise_vec[9:21] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
         noise_vec[21:33] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-        noise_vec[6:9] = noise_scales.gravity * noise_level
         noise_vec[33:45] = 0.
         # noise_vec[9:12] = 0. # commands
         # noise_vec[12:24] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
@@ -738,6 +738,7 @@ class EqrAMP(BaseTask):
         self.old_pos[:] = self.root_states[:, :3]
         self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1,3)  # shape: num_envs, num_bodies, xyz axis
         self.rigid_body_state = gymtorch.wrap_tensor(rigid_body_state).view(self.num_envs, -1, 13)
+        self.rigid_body_pos = self.rigid_body_state.view(self.num_envs, self.num_bodies, 13)[..., 0:3]
         # print(self.rigid_body_state.shape)  # 4*5 + 1
         # print(self.feet_indices)
         # print("num_envs = ", self.num_envs)
@@ -847,13 +848,49 @@ class EqrAMP(BaseTask):
         off_z = torch.sin(theta_ab) * off_y_hip + torch.cos(theta_ab) * off_z_hip
         return torch.stack([off_x, off_y, off_z], dim=-1)
 
-    def foot_positions_in_base_frame(self, foot_angles):
+    def ori_foot_positions_in_base_frame(self, foot_angles):
         foot_positions = torch.zeros_like(foot_angles)
         for i in range(4):
             foot_positions[:, i * 3:i * 3 + 3].copy_(
                 self.foot_position_in_hip_frame(foot_angles[:, i * 3: i * 3 + 3], l_hip_sign=(-1)**(i)))
         foot_positions = foot_positions + HIP_OFFSETS.reshape(12,).to(self.device)
         return foot_positions
+
+    def foot_positions_in_base_frame(self):
+        feet_indices = [i for i, name in enumerate(self.rigid_body_names) if
+                        re.match(self.cfg.params.feet_name_reward["feet_name"], name)]
+        # print(feet_indices)
+        # print("Rigid body pos shape:", self.rigid_body_pos.shape)
+        feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
+        # feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
+        foot_pos = self.rigid_body_pos[:, feet_indices_tensor, :]
+        foot_pos = foot_pos.reshape(foot_pos.shape[0], -1)
+        foot_pos = self.foot_positions_in_base_frame_from_world(foot_pos)
+        return foot_pos
+
+    def foot_positions_in_base_frame_from_world(self, foot_world):
+        """将世界坐标系下的足端位置转换为机器人自身的 base 坐标系下的坐标。
+
+        Returns:
+            [Tensor] Tensor of shape (num_envs, 12)，每个环境中四个足端在 base 坐标系下的位置 [x1, y1, z1, ..., x4, y4, z4]
+        """
+        # 获取世界坐标下的足端位置并 reshape 成 [num_envs, 4, 3]
+        #foot_world = self.foot_positions_in_base_frame().reshape(self.num_envs, 4, 3)
+        foot_world = foot_world.reshape(self.num_envs, 4, 3)
+
+        # 获取 base 的位置和平移
+        base_pos = self.root_states[:, :3].unsqueeze(1)  # [num_envs, 1, 3]
+        base_quat = self.root_states[:, 3:7]  # [num_envs, 4]
+
+        # 相对位置
+        foot_offset_world = foot_world - base_pos  # [num_envs, 4, 3]
+        foot_offset_world_flat = foot_offset_world.reshape(-1, 3)  # [N*4, 3]
+        base_quat_repeat = base_quat.repeat_interleave(4, dim=0)  # [N*4, 4]
+
+        foot_in_base_flat = quat_rotate_inverse(base_quat_repeat, foot_offset_world_flat)  # [N*4, 3]
+        foot_in_base = foot_in_base_flat.reshape(self.num_envs, 4, 3)  # [N, 4, 3]
+
+        return foot_in_base.reshape(self.num_envs, -1)  # [num_envs, 12]
 
     def _prepare_reward_function(self):
         """ Prepares a list of reward functions, whcih will be called to compute the total reward.
@@ -961,6 +998,7 @@ class EqrAMP(BaseTask):
 
         # save body names from the asset
         body_names = self.gym.get_asset_rigid_body_names(robot_asset)
+        self.rigid_body_names = body_names
         self.dof_names = self.gym.get_asset_dof_names(robot_asset)
         self.num_bodies = len(body_names)
         self.num_dofs = len(self.dof_names)
@@ -983,6 +1021,9 @@ class EqrAMP(BaseTask):
         env_upper = gymapi.Vec3(0., 0., 0.)
         self.actor_handles = []
         self.envs = []
+        self.joint_damping_range = self.cfg.domain_rand.joint_damping_range
+        self.joint_friction_range = self.cfg.domain_rand.joint_friction_range
+        self.joint_armature_range = self.cfg.domain_rand.joint_armature_range
 
         sensor_pose = gymapi.Transform()
         for name in feet_names:
@@ -1005,6 +1046,12 @@ class EqrAMP(BaseTask):
             self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
             actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
             dof_props = self._process_dof_props(dof_props_asset, i)
+
+            for j in range(len(dof_props)):
+                dof_props["damping"][j] = np.random.uniform(*self.joint_damping_range)
+                dof_props["friction"][j] = np.random.uniform(*self.joint_friction_range)
+                dof_props["armature"][j] = np.random.uniform(*self.joint_armature_range)
+
             self.gym.set_actor_dof_properties(env_handle, actor_handle, dof_props)
             body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle)
             body_props = self._process_rigid_body_props(body_props, i)
@@ -1106,7 +1153,7 @@ class EqrAMP(BaseTask):
 
         # 在循环中使用对应颜色
         # 获取当前所有环境中机器人的足端位置
-        foot_positions = self.foot_positions_in_base_frame(self.dof_pos)  # shape: [num_envs, 12]
+        foot_positions = self.foot_positions_in_base_frame()  # shape: [num_envs, 12]
 
         # 对每个环境循环
         for i in range(self.num_envs):

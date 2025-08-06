@@ -45,6 +45,8 @@ class AMPPPO:
                  discriminator,
                  amp_data,
                  amp_normalizer,
+                 depth_encoder=None,
+                 depth_encoder_paras=None,
                  num_learning_epochs=1,
                  num_mini_batches=1,
                  clip_param=0.2,
@@ -108,11 +110,21 @@ class AMPPPO:
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
         self.num_adaptation_module_substeps = num_adaptation_module_substeps
+        self.if_depth = depth_encoder != None
+        if self.if_depth:
+            self.depth_encoder = depth_encoder
+            self.depth_encoder_optimizer = optim.Adam(self.depth_encoder.parameters(),lr=depth_encoder_paras["learning_rate"])
         if student:
             self.student_adaptation = deepcopy(actor_critic.adaptation_module)
             self.student_adaptation_optimizer = optim.Adam(self.student_adaptation.parameters())
             self.student_actor = deepcopy(actor_critic.actor)
             self.student_actor_optimizer = optim.Adam([*self.student_actor.parameters(), *self.student_adaptation.parameters()])
+            if self.if_depth:
+                self.depth_encoder = depth_encoder
+                self.depth_encoder_optimizer = optim.Adam(self.depth_encoder.parameters(),lr=depth_encoder_paras["learning_rate"])
+                self.depth_encoder_paras = depth_encoder_paras
+                self.student_actor_optimizer = optim.Adam(
+                    [*self.student_actor.parameters(), *self.student_adaptation.parameters(), *self.depth_encoder.parameters()], lr=depth_encoder_paras["learning_rate"])
 
     def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape):
         self.storage = RolloutStorage(
@@ -124,7 +136,7 @@ class AMPPPO:
     def train_mode(self):
         self.actor_critic.train()
 
-    def act(self, obs, critic_obs, privileged_obs, obs_history,amp_obs):
+    def act(self, obs, critic_obs, privileged_obs, obs_history,amp_obs, depth_image = None):
         if self.actor_critic.is_recurrent:
             self.transition.hidden_states = self.actor_critic.get_hidden_states()
         # Compute the actions and values
@@ -140,6 +152,10 @@ class AMPPPO:
         self.transition.privileged_observations = privileged_obs
         self.transition.observation_histories = obs_history
         self.amp_transition.observations = amp_obs
+        if self.if_depth:
+            self.transition.depth_image = depth_image
+            self.depth_encoder(depth_image, obs)
+            self.transition.hidden_states = tuple([self.depth_encoder.get_hidden_states()])
         return self.transition.actions
     
     def process_env_step(self, rewards, dones, infos, amp_obs):
@@ -188,7 +204,7 @@ class AMPPPO:
         for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
 
                 obs_batch, critic_obs_batch, privileged_obs_batch, obs_history_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
-                    old_mu_batch, old_sigma_batch,_,_,_,_,_, hid_states_batch, masks_batch = sample
+                    old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch = sample
                 aug_obs_batch = obs_batch.detach()
                 self.actor_critic.act(aug_obs_batch, privileged_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
                 actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
@@ -277,7 +293,16 @@ class AMPPPO:
                 for epoch in range(self.num_adaptation_module_substeps):
                     adaptation_pred = self.actor_critic.adaptation_module(obs_history_batch)
                     with torch.no_grad():
-                        adaptation_target = self.actor_critic.env_factor_encoder(privileged_obs_batch)
+                        if self.actor_critic.terrain_hidden_dims is not None:
+                            terrain_latent_target = self.actor_critic.terrain_encoder(privileged_obs_batch[:,:self.actor_critic.terrain_input_dims])
+                            env_latent_target = self.actor_critic.env_factor_encoder(privileged_obs_batch[:,self.actor_critic.terrain_input_dims:])
+                            adaptation_target = torch.cat((terrain_latent_target,env_latent_target),dim=-1)
+                            if self.if_depth:
+                                adaptation_target = env_latent_target
+                            if self.actor_critic.parkour:
+                                adaptation_target = env_latent_target
+                        else:
+                            adaptation_target = self.actor_critic.env_factor_encoder(privileged_obs_batch)
                         # residual = (adaptation_target - adaptation_pred).norm(dim=1)
 
                     adaptation_loss = F.mse_loss(adaptation_pred, adaptation_target)
@@ -305,15 +330,15 @@ class AMPPPO:
         return mean_value_loss, mean_surrogate_loss, mean_adaptation_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred
 
     def behavioral_cloning(self,
-                      actions_student_buffer,
-                      actions_teacher_buffer,
-                      env_latent_buffer,
-                      adaptation_latent_buffer,
-                      clip_param_supervise=0.2,
-                      supervise_epochs=1,
-                      supervise_mini_batches=24,
-                        which =None
-                      ):
+                           actions_student_buffer,
+                           actions_teacher_buffer,
+                           env_latent_buffer=None,
+                           adaptation_latent_buffer=None,
+                           clip_param_supervise=0.2,
+                           supervise_epochs=1,
+                           supervise_mini_batches=1,
+                           which=None
+                           ):
         """supervise训练 student_actor 和 student_adaptation"""
 
         batch_size = len(actions_student_buffer)
@@ -332,25 +357,26 @@ class AMPPPO:
             #     adaptation_latent_mini = adaptation_latent_buffer.clone()
             #     env_latent_mini = env_latent_buffer.clone()
 
-                if 'actor' in which:
-                    # 训练 `student_actor`（模仿专家策略）
-                    #actor_loss = F.mse_loss(actions_student_mini, actions_teacher_mini)
-                    actor_loss = (actions_teacher_buffer.detach() - actions_student_buffer).norm(p=2, dim=1).mean()
-                    adaptation_loss = torch.tensor(0., device=self.device)
-                    self.student_actor_optimizer.zero_grad()
-                    actor_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.student_actor.parameters(), clip_param_supervise)
-                    self.student_actor_optimizer.step()
-                elif 'adaptation' in which:
-                    # 训练 `student_adaptation`（模仿环境适应模块）
-                    adaptation_loss = F.mse_loss(env_latent_buffer, adaptation_latent_buffer)
-                    actor_loss = torch.tensor(0., device=self.device)
-                    self.student_adaptation_optimizer.zero_grad()
-                    adaptation_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.student_adaptation.parameters(), clip_param_supervise)
-                    self.student_adaptation_optimizer.step()
-                else:
-                    return torch.tensor(0., device=self.device), torch.tensor(0., device=self.device)
+            if 'actor' in which:
+                # 训练 `student_actor`（模仿专家策略）
+                # actor_loss = F.mse_loss(actions_student_mini, actions_teacher_mini)
+                actor_loss = (actions_teacher_buffer.detach() - actions_student_buffer).norm(p=2, dim=1).mean()
+                adaptation_loss = (env_latent_buffer.detach() - adaptation_latent_buffer).norm(p=2, dim=1).mean()
+                loss = actor_loss+adaptation_loss
+                self.student_actor_optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.student_actor.parameters(), clip_param_supervise)
+                self.student_actor_optimizer.step()
+            elif 'adaptation' in which:
+                # 训练 `student_adaptation`（模仿环境适应模块）
+                adaptation_loss = F.mse_loss(env_latent_buffer, adaptation_latent_buffer)
+                actor_loss = torch.tensor(0., device=self.device)
+                self.student_adaptation_optimizer.zero_grad()
+                adaptation_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.student_adaptation.parameters(), clip_param_supervise)
+                self.student_adaptation_optimizer.step()
+            else:
+                return torch.tensor(0., device=self.device), torch.tensor(0., device=self.device)
 
         return actor_loss.detach().item(), adaptation_loss.detach().item()
 
@@ -409,5 +435,16 @@ class AMPPPO:
     def act_student_inference(self, observations, observation_history, policy_info={}):
         latent = self.student_adaptation(observation_history)
         actions_mean = self.student_actor(torch.cat((observations, latent), dim=-1))
+        policy_info["latents"] = latent.detach().cpu().numpy()
+        return actions_mean, latent
+
+    def get_student_vision_inference_policy(self, device=None):
+        self.student_adaptation.eval()
+        self.student_actor.eval()
+        return self.act_student_vision_inference
+
+    def act_student_vision_inference(self, observations, observation_history, depth_latent_student, policy_info={}):
+        latent = self.student_adaptation(observation_history)
+        actions_mean = self.student_actor(torch.cat((observations, depth_latent_student, latent), dim=-1))
         policy_info["latents"] = latent.detach().cpu().numpy()
         return actions_mean, latent
