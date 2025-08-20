@@ -62,6 +62,9 @@ from .eqr.eqr_handstand_config import EqrFootStandCfg, EqrHandStandCfg, EqrSkill
 from .eqr.eqr_amp import EqrAMP
 from .eqr.eqr_amp_config import EqrAMPCfg, EqrAMPCfgPPO
 
+from .go2.go2_amp import Go2AMP
+from .go2.go2_amp_config import Go2AMPCfg, Go2AMPCfgPPO
+
 import os
 
 from legged_gym.utils.task_registry import task_registry
@@ -87,3 +90,5 @@ task_registry.register( "eqr", Eqr, EqrRoughCfg(), EqrRoughCfgPPO() )
 task_registry.register( "eqrhandstand", EQRSkill, EqrHandStandCfg(), EqrSkillCfgPPO() )
 task_registry.register( "eqrfootstand", EQRSkill, EqrFootStandCfg(), EqrSkillCfgPPO() )
 task_registry.register( "eqramp", EqrAMP, EqrAMPCfg(), EqrAMPCfgPPO() )
+
+task_registry.register( "go2amp", Go2AMP, Go2AMPCfg(), Go2AMPCfgPPO() )
