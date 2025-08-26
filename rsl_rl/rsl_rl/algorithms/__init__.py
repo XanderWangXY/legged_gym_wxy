@@ -31,3 +31,4 @@
 from .ppo import PPO
 from .amp_ppo import AMPPPO
 from .ppo_dwaq import PPO_DWAQ
+from .ppo_dvae import PPO_DVAE

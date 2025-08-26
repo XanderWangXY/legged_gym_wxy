@@ -364,15 +364,15 @@ class LeggedRobot(BaseTask):
             [List[gymapi.RigidShapeProperties]]: Modified rigid shape properties
         """
         for s in range(len(props)):
-            random_foot_restitution = self.cfg.asset.restitution_mean + torch_rand_float(
-                self.cfg.asset.restitution_offset_range[0],
-                self.cfg.asset.restitution_offset_range[1], (1, 1),
-                device=self.device)
+            # random_foot_restitution = self.cfg.asset.restitution_mean + torch_rand_float(
+            #     self.cfg.asset.restitution_offset_range[0],
+            #     self.cfg.asset.restitution_offset_range[1], (1, 1),
+            #     device=self.device)
             # random_compliance = self.cfg.asset.compliance + torch_rand_float(
             #     self.cfg.asset.compliance_offset_range[0],
             #     self.cfg.asset.compliance_offset_range[1], (1, 1),
             #     device=self.device)
-            props[s].restitution = random_foot_restitution
+            props[s].restitution = self.cfg.asset.restitution_mean
             props[s].compliance = self.cfg.asset.compliance
 
         if self.cfg.domain_rand.randomize_friction:
@@ -489,7 +489,7 @@ class LeggedRobot(BaseTask):
         # self.commands[env_ids, 2] = torch.tensor([fixed_commands[2]]).repeat(len(env_ids)).to(device=self.device)
 
         # set small commands to zero
-        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.1).unsqueeze(1)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.

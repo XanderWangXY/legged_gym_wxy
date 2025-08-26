@@ -34,12 +34,12 @@ import torch.optim as optim
 import torch.nn.functional as F
 from copy import deepcopy
 
-from rsl_rl.modules import ActorCritic_DWAQ
+from rsl_rl.modules import ActorCritic_DVAE
 from rsl_rl.modules import ActorCritic
 from rsl_rl.storage import RolloutStorage
 
-class PPO_DWAQ:
-    actor_critic: ActorCritic_DWAQ
+class PPO_DVAE:
+    actor_critic: ActorCritic_DVAE
     def __init__(self,
                  actor_critic,
                  num_learning_epochs=1,
@@ -95,9 +95,9 @@ class PPO_DWAQ:
         if self.actor_critic.is_recurrent:
             self.transition.hidden_states = self.actor_critic.get_hidden_states()
         # Compute the actions and values
-        self.transition.actions = self.actor_critic.act(obs, obs_history).detach()
+        self.transition.actions = self.actor_critic.act(obs, obs_history)[0].detach()
 #        self.transition.actions_priv_input = self.actor_critic.act_inference(obs,obs_history).detach()
-        self.transition.values = self.actor_critic.evaluate(torch.cat((critic_obs, privileged_obs),dim=-1)).detach()
+        self.transition.values = self.actor_critic.evaluate(torch.cat((critic_obs, privileged_obs),dim=-1))[0].detach()
         self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
         self.transition.action_mean = self.actor_critic.action_mean.detach()
         self.transition.action_sigma = self.actor_critic.action_std.detach()
@@ -121,13 +121,15 @@ class PPO_DWAQ:
         self.actor_critic.reset(dones)
     
     def compute_returns(self, last_critic_obs, last_critic_privileged_obs):
-        last_values = self.actor_critic.evaluate(torch.cat((last_critic_obs, last_critic_privileged_obs),dim=-1)).detach()
+        last_values = self.actor_critic.evaluate(torch.cat((last_critic_obs, last_critic_privileged_obs),dim=-1))[0].detach()
         self.storage.compute_returns(last_values, self.gamma, self.lam)
 
     def update(self,beta=1):
         mean_value_loss = 0
         mean_surrogate_loss = 0
-        mean_autoenc_loss = 0
+        mean_policy_vae_loss = 0
+        mean_critic_vae_loss = 0
+        mean_z_mse_loss = 0
         if self.actor_critic.is_recurrent:
             generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
         else:
@@ -136,9 +138,17 @@ class PPO_DWAQ:
             old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch in generator:
 
 
-                self.actor_critic.act(obs_batch, obs_history_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                _, z_policy, vae_out_policy = self.actor_critic.act(obs_batch, obs_history_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
                 actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
-                value_batch = self.actor_critic.evaluate(torch.cat((critic_obs_batch,privileged_obs_batch),dim=-1), masks=masks_batch, hidden_states=hid_states_batch[1])
+                value_batch, z_critic, vae_out_critic = self.actor_critic.evaluate(torch.cat((critic_obs_batch,privileged_obs_batch),dim=-1), masks=masks_batch, hidden_states=hid_states_batch[1])
+                vh_target_batch = torch.cat((privileged_obs_batch[:, :187], privileged_obs_batch[:, -3:]), dim=-1)
+                # critic vae loss
+                critic_vae_loss = nn.MSELoss()(vae_out_critic, vh_target_batch)
+                # policy vae loss
+                policy_vae_loss = nn.MSELoss()(vae_out_policy, vh_target_batch)
+                # z mse loss
+                z_mse_loss = nn.MSELoss()(z_policy, z_critic.detach())
+
                 mu_batch = self.actor_critic.action_mean
                 sigma_batch = self.actor_critic.action_std
                 entropy_batch = self.actor_critic.entropy
@@ -158,20 +168,6 @@ class PPO_DWAQ:
                         for param_group in self.optimizer.param_groups:
                             param_group['lr'] = self.learning_rate
 
-
-                #Beta VAE loss
-                code,code_vel,decode,mean_vel,logvar_vel,mean_latent,logvar_latent = self.actor_critic.cenet_forward(obs_history_batch)
-                
-                vel_target = privileged_obs_batch[:,-3:]
-                decode_target = obs_batch
-                vel_target.requires_grad = False
-                decode_target.requires_grad = False
-                kl_loss = torch.mean(-0.5 * torch.sum((1 + logvar_latent - mean_latent.pow(2) - logvar_latent.exp()),dim=-1))
-                autoenc_loss = (nn.MSELoss()(code_vel,vel_target) + nn.MSELoss()(decode,decode_target) + beta*kl_loss)/self.num_mini_batches
-                # estimation_loss = (code[:,0:3] - prev_critic_obs_batch[:,45:48]).pow(2).mean()
-                # reconst_loss = (decode - obs_batch).pow(2).mean()
-                # latent_loss = beta*(-0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()))/mean.shape[0]
-                # autoenc_loss = estimation_loss + reconst_loss + latent_loss
                 # Surrogate loss
                 ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
                 surrogate = -torch.squeeze(advantages_batch) * ratio
@@ -189,7 +185,7 @@ class PPO_DWAQ:
                 else:
                     value_loss = (returns_batch - value_batch).pow(2).mean()
 
-                loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean() + autoenc_loss
+                loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean() + critic_vae_loss + policy_vae_loss + z_mse_loss
 
                 # Gradient step
                 self.optimizer.zero_grad()
@@ -199,11 +195,16 @@ class PPO_DWAQ:
 
                 mean_value_loss += value_loss.item()
                 mean_surrogate_loss += surrogate_loss.item()
-                mean_autoenc_loss += autoenc_loss.item()
+                mean_policy_vae_loss += policy_vae_loss.item()
+                mean_critic_vae_loss += critic_vae_loss.item()
+                mean_z_mse_loss += z_mse_loss.item()
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
+        mean_policy_vae_loss /= num_updates
+        mean_critic_vae_loss /= num_updates
+        mean_z_mse_loss /= num_updates
         self.storage.clear()
 
-        return mean_value_loss, mean_surrogate_loss, mean_autoenc_loss
+        return mean_value_loss, mean_surrogate_loss, mean_policy_vae_loss, mean_critic_vae_loss, mean_z_mse_loss

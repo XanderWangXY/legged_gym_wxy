@@ -62,8 +62,12 @@ from .eqr.eqr_handstand_config import EqrFootStandCfg, EqrHandStandCfg, EqrSkill
 from .eqr.eqr_amp import EqrAMP
 from .eqr.eqr_amp_config import EqrAMPCfg, EqrAMPCfgPPO
 
-from .go2.go2_amp import Go2AMP
-from .go2.go2_amp_config import Go2AMPCfg, Go2AMPCfgPPO
+from .go2.go2_amp import Go2AMP, Go2AMPRough
+from .go2.go2_amp_config import Go2AMPCfg, Go2AMPCfgPPO, Go2AMPRoughCfg, Go2AMPRoughCfgPPO
+from .go2.go2_skill import Go2Skill
+from .go2.go2_handstand_config import Go2FootStandCfg,Go2HandStandCfg,Go2SkillCfgPPO
+from .go2.go2 import Go2
+from .go2.go2_config import Go2RoughCfg, Go2RoughCfgPPO, Go2RoughCfgDVAEPPO
 
 import os
 
@@ -92,3 +96,8 @@ task_registry.register( "eqrfootstand", EQRSkill, EqrFootStandCfg(), EqrSkillCfg
 task_registry.register( "eqramp", EqrAMP, EqrAMPCfg(), EqrAMPCfgPPO() )
 
 task_registry.register( "go2amp", Go2AMP, Go2AMPCfg(), Go2AMPCfgPPO() )
+task_registry.register( "go2amp_rough", Go2AMPRough, Go2AMPRoughCfg(), Go2AMPRoughCfgPPO() )
+task_registry.register( "go2handstand", Go2Skill, Go2HandStandCfg(), Go2SkillCfgPPO() )
+task_registry.register( "go2footstand", Go2Skill, Go2FootStandCfg(), Go2SkillCfgPPO() )
+task_registry.register( "go2", Go2, Go2RoughCfg(), Go2RoughCfgPPO() )
+task_registry.register( "go2dvae", Go2, Go2RoughCfg(), Go2RoughCfgDVAEPPO() )

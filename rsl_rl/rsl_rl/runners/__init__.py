@@ -31,3 +31,4 @@
 from .on_policy_runner import OnPolicyRunner
 from .amp_on_policy_runner import AMPOnPolicyRunner
 from .on_policy_runner_dwaq import OnPolicyRunner_DWAQ
+from .on_policy_runner_dvae import OnPolicyRunner_DVAE

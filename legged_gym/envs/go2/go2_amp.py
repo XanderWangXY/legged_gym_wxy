@@ -528,7 +528,7 @@ class Go2AMP(BaseTask):
         # self.commands[env_ids, 2] = torch.tensor([fixed_commands[2]]).repeat(len(env_ids)).to(device=self.device)
 
         # set small commands to zero
-        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.1).unsqueeze(1)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.

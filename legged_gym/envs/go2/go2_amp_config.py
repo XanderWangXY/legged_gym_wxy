@@ -81,7 +81,7 @@ class Go2AMPCfg( LeggedRobotCfg ):
         randomize_base_mass = True
         added_mass_range = [-1., 3.]
         randomize_com_offset = True
-        com_offset_range = [[-0.04, 0.05], [-0.02, 0.02], [-0.03, 0.03]]
+        com_offset_range = [[-0.03, 0.06], [-0.02, 0.02], [-0.02, 0.04]]
         randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         randomize_Kp_factor = True
@@ -177,7 +177,7 @@ class Go2AMPRoughCfg( Go2AMPCfg ):
         num_rows = 10  # number of terrain rows (levels)
         num_cols = 20  # number of terrain cols (types)
         # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete, stepping stones, wave]
-        terrain_proportions = [0.0, 0.2, 0.3, 0.25, 0.25, 0., 0.0, 0.]
+        terrain_proportions = [0.1, 0.15, 0.3, 0.25, 0.20, 0., 0.0, 0.]
         # trimesh only:
         slope_treshold = 0.75  # slopes above this threshold will be corrected to vertical surfaces
 
@@ -192,6 +192,28 @@ class Go2AMPRoughCfg( Go2AMPCfg ):
             lin_vel_y = [-1.0, 1.0]   # min max [m/s]
             ang_vel_yaw = [-1, 1]    # min max [rad/s]
             heading = [-3.14, 3.14]
+
+    class rewards( LeggedRobotCfg.rewards ):
+        soft_dof_pos_limit = 0.9
+        base_height_target = 0.25
+        class scales( LeggedRobotCfg.rewards.scales ):
+            termination = 0.0
+            tracking_lin_vel = 1.0 * 1. / (.005 * 4)
+            tracking_ang_vel = 0.5 * 1. / (.005 * 4)
+            lin_vel_z = 0.0
+            ang_vel_xy = 0.0
+            orientation = 0.0
+            torques = -1e-4 * 1. / (.005 * 4)
+            dof_vel = 0.0
+            dof_acc = -2.5e-7 * 1. / (.005 * 4)
+            dof_pos_limits = 0.#-10.0* 1. / (.005 * 6)
+            base_height = 0.0
+            feet_air_time =  0.#1.0* 1. / (.005 * 6)
+            collision = -0.1 * 1. / (.005 * 4)
+            feet_stumble = 0.0
+            action_rate = -0.01 * 1. / (.005 * 4)
+            stand_still = 0.0
+            dof_pos_limits = 0.0
 
 
 class Go2AMPCfgPPO( LeggedRobotCfgPPO ):
@@ -232,5 +254,41 @@ class Go2AMPCfgPPO( LeggedRobotCfgPPO ):
 
         min_normalized_std = [0.05, 0.02, 0.05] * 4
 
+class Go2AMPRoughCfgPPO( Go2AMPCfgPPO ):
+    runner_class_name = 'AMPOnPolicyRunner'
+    class policy(LeggedRobotCfgPPO.policy):
+        terrain_hidden_dims = [512, 256, 128]
+        terrain_input_dims = 187
+        terrain_latent_dims = 36
+        encoder_latent_dims = 12
+    class algorithm( LeggedRobotCfgPPO.algorithm ):
+        entropy_coef = 0.01
+        student = False
+        dagger_beta = 1.0
+        amp_replay_buffer_size = 1000000
+        num_learning_epochs = 5
+        num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
 
+    class student:
+        num_mini_batches = 1  # mini batch size = num_envs*nsteps / nminibatches
+        num_steps_per_env = 120
+        num_learning_epochs = 1
+
+    class runner( LeggedRobotCfgPPO.runner ):
+        max_iterations = 50000  # number of policy updatesf
+        run_name = ''
+        description = 'test'
+        num_steps_per_env = 24
+
+        experiment_name = 'go2_amp'
+        algorithm_class_name = 'AMPPPO'
+        policy_class_name = 'ActorCritic'
+
+        amp_reward_coef = 2.0
+        amp_motion_files = MOTION_FILES
+        amp_num_preload_transitions = 2000000
+        amp_task_reward_lerp = 0.5
+        amp_discr_hidden_dims = [1024, 512]
+
+        min_normalized_std = [0.05, 0.02, 0.05] * 4
   
