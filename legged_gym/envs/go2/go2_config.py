@@ -34,8 +34,9 @@ class Go2RoughCfg( LeggedRobotCfg ):
     class env(LeggedRobotCfg.env):
         num_observations = 45#235-187
         num_privileged_obs = 187+36+3+1+3+4+4 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
-        num_observation_history = 20
+        num_observation_history = 50
         num_envs = 4096
+        task_name = 'go2'
 
     class init_state( LeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.4]  # x,y,z [m]
@@ -99,10 +100,10 @@ class Go2RoughCfg( LeggedRobotCfg ):
         # penalize_contacts_on = ["THIGH", "shoulder", "SHANK"]
         penalize_contacts_on = ["thigh", "calf"]
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
-        terminate_after_contacts_on = ["base"]
+        terminate_after_contacts_on = ["base", "Head"]
         self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter
         restitution_mean = 0.5
-        # restitution_offset_range = [-0.1, 0.1]
+        restitution_offset_range = [-0.1, 0.1]
         compliance = 0.5
         # compliance_offset_range = [-0.1, 0.1]
   

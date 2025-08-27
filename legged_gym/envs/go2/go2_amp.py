@@ -407,7 +407,7 @@ class Go2AMP(BaseTask):
                 self.cfg.asset.restitution_offset_range[1], (1, 1),
                 device=self.device)
             if 'go2' in self.task_name:
-                feet_list = [7, 13, 19, 25]
+                feet_list = [4, 8, 14, 18]
             else:
                 raise Exception("")
             if s in feet_list:

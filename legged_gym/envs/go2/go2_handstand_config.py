@@ -98,9 +98,9 @@ class Go2FootStandCfg( LeggedRobotCfg ):
         foot_name = "foot"
         # shoulder_name = "shoulder"
         # penalize_contacts_on = ["THIGH", "shoulder", "SHANK"]
-        penalize_contacts_on = ["thigh", "calf", "Head"]
+        penalize_contacts_on = ["thigh", "calf"]
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
-        terminate_after_contacts_on = ["base"]
+        terminate_after_contacts_on = ["base", "Head"]
         self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter
         restitution_mean = 0.5
         restitution_offset_range = [-0.1, 0.1]
@@ -138,7 +138,7 @@ class Go2FootStandCfg( LeggedRobotCfg ):
             handstand_feet_air_time = 1.0
             handstand_orientation_l2 = -2.5
             hipy_angle_threshold = 0.5
-            dof_pos_limits = -10
+            # dof_pos_limits = -3
             #both_feet_air = -1.0
 
     class commands:
@@ -193,10 +193,10 @@ class Go2HandStandCfg( Go2FootStandCfg ):
             handstand_feet_height_exp = 12.0
             action_rate = -0.03
             hipy_angle_threshold = 0.
-            handstand_orientation_l2 = -4
-            collision = -3.
-            # base_height_exp = 5.
-            base_height = -5
+            # handstand_orientation_l2 = -4
+            # collision = -10.
+            # base_height_exp = 3.
+            # base_height = -2
 
     class params(Go2FootStandCfg.params):
         handstand_feet_height_exp = {

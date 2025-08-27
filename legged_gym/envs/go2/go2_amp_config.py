@@ -107,7 +107,7 @@ class Go2AMPCfg( LeggedRobotCfg ):
         # penalize_contacts_on = ["THIGH", "shoulder", "SHANK"]
         penalize_contacts_on = ["thigh", "calf"]
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
-        terminate_after_contacts_on = ["base"]
+        terminate_after_contacts_on = ["base", "Head"]
         self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter
         restitution_mean = 0.5
         restitution_offset_range = [-0.1, 0.1]
