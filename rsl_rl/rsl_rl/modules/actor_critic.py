@@ -191,14 +191,14 @@ class ActorCritic(nn.Module):
                         if_depth=None,
                         actor_hidden_dims=[256, 256, 256],
                         critic_hidden_dims=[256, 256, 256],
-                        encoder_hidden_dims=[512, 256],
+                        encoder_hidden_dims=[256, 128],
                         adaptation_hidden_dims=[256, 32],
                         terrain_hidden_dims=None,
                         activation='elu',
                         init_noise_std=1.0,
                         terrain_input_dims=187,
                         terrain_latent_dims=36,
-                        encoder_latent_dims=36,
+                        encoder_latent_dims=18,
                         adaptation_rnn_hidden_size=256,  # 新增
                         adaptation_rnn_num_layers=1,  # 新增
                         parkour = False,
@@ -208,6 +208,7 @@ class ActorCritic(nn.Module):
         super(ActorCritic, self).__init__()
 
         activation = get_activation(activation)
+        activation_softsign = get_activation('softsign')
         
         env_encoder_input = num_privileged_obs
         adaptation_output = encoder_latent_dims
@@ -223,6 +224,7 @@ class ActorCritic(nn.Module):
             for l in range(len(terrain_hidden_dims)):
                 if l == len(terrain_hidden_dims) - 1:
                     terrain_encoder_layers.append(nn.Linear(terrain_hidden_dims[l], terrain_latent_dims))
+                    # terrain_encoder_layers.append(activation_softsign)
                 else:
                     terrain_encoder_layers.append(nn.Linear(terrain_hidden_dims[l], terrain_hidden_dims[l + 1]))
                     terrain_encoder_layers.append(activation)
@@ -242,6 +244,7 @@ class ActorCritic(nn.Module):
         for l in range(len(encoder_hidden_dims)):
             if l == len(encoder_hidden_dims) - 1:
                 env_encoder_layers.append(nn.Linear(encoder_hidden_dims[l], encoder_latent_dims))
+                # env_encoder_layers.append(activation_softsign)
             else:
                 env_encoder_layers.append(nn.Linear(encoder_hidden_dims[l], encoder_hidden_dims[l + 1]))
                 env_encoder_layers.append(activation)
@@ -283,7 +286,7 @@ class ActorCritic(nn.Module):
             latent_dim = int(torch.tensor(encoder_latent_dims + terrain_latent_dims))
 
         mlp_input_dim_a = num_actor_obs + latent_dim
-        mlp_input_dim_c = num_critic_obs + latent_dim
+        mlp_input_dim_c = num_actor_obs + num_privileged_obs
 
         # Policy
         actor_layers = []
@@ -419,13 +422,14 @@ class ActorCritic(nn.Module):
         Returns:
             Tensor: The value estimates.
         """
-        if self.terrain_hidden_dims is not None:
-            terrain_latent = self.terrain_encoder(privileged_observations[:, :self.terrain_input_dims])
-            env_latent = self.env_factor_encoder(privileged_observations[:, self.terrain_input_dims:])
-            latent = torch.cat((terrain_latent, env_latent), dim=-1)
-        else:
-            latent = self.env_factor_encoder(privileged_observations)
-        value = self.critic(torch.cat((critic_observations, latent), dim=-1))
+        # if self.terrain_hidden_dims is not None:
+        #     terrain_latent = self.terrain_encoder(privileged_observations[:, :self.terrain_input_dims])
+        #     env_latent = self.env_factor_encoder(privileged_observations[:, self.terrain_input_dims:])
+        #     latent = torch.cat((terrain_latent, env_latent), dim=-1)
+        # else:
+        #     latent = self.env_factor_encoder(privileged_observations)
+        # value = self.critic(torch.cat((critic_observations, latent), dim=-1))
+        value = self.critic(torch.cat((critic_observations, privileged_observations), dim=-1))
         return value
 
 def get_activation(act_name):
@@ -443,6 +447,8 @@ def get_activation(act_name):
         return nn.Tanh()
     elif act_name == "sigmoid":
         return nn.Sigmoid()
+    elif act_name == 'softsign':
+        return nn.Softsign()
     else:
         print("invalid activation function!")
         return None

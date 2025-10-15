@@ -111,7 +111,7 @@ class EqrFootStandCfg( LeggedRobotCfg ):
         tracking_sigma = 0.25  # tracking reward = exp(-error^2/sigma)
         soft_dof_pos_limit = 5.  # percentage of urdf limits, values above this limit are penalized
         soft_dof_vel_limit = 1.
-        soft_torque_limit = 29.
+        soft_torque_limit = 1.
         base_height_target = 0.42
         max_contact_force = 100.
         class scales( LeggedRobotCfg.rewards.scales ):

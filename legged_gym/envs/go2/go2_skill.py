@@ -187,6 +187,8 @@ class Go2Skill(LeggedRobot):
         self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device,requires_grad=False)
+        self.feet_height = torch.zeros(self.num_envs, 2, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
         self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
         self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
@@ -323,7 +325,7 @@ class Go2Skill(LeggedRobot):
         # #      external_forces_and_torques * self.priv_obs_scales.external_wrench,
         # #      airtime * self.priv_obs_scales.airtime),
         # #     dim=-1)
-
+        # print(self.root_states[:, 2].unsqueeze(-1))
         self.privileged_obs_buf = torch.cat((
             #self.heights.squeeze(-1),
             self.root_states[:, 2].unsqueeze(-1),#base_height
@@ -340,6 +342,26 @@ class Go2Skill(LeggedRobot):
              (self.Kd_factors - 1) * self.priv_obs_scales.kd_factor,  # Kd factor, 12
         ), dim=1)
         # print(self.privileged_obs_buf.shape)
+    def _resample_commands(self, env_ids):
+        """ Randommly select commands of some environments
+
+        Args:
+            env_ids (List[int]): Environments ids for which new commands are needed
+        """
+        self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+        self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+        if self.cfg.commands.heading_command:
+            self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+        else:
+            self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+
+        # fixed_commands = [0.0, 0.0, 0.0]
+        # self.commands[env_ids, 0] = torch.tensor([fixed_commands[0]]).repeat(len(env_ids)).to(device=self.device)
+        # self.commands[env_ids, 1] = torch.tensor([fixed_commands[1]]).repeat(len(env_ids)).to(device=self.device)
+        # self.commands[env_ids, 2] = torch.tensor([fixed_commands[2]]).repeat(len(env_ids)).to(device=self.device)
+
+        # set small commands to zero
+        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
 
 
     # ------------ reward functions----------------
@@ -352,6 +374,7 @@ class Go2Skill(LeggedRobot):
         # feet_indices_tensor = torch.tensor(feet_indices, dtype=torch.long, device=self.rigid_body_pos.device)
         foot_pos = self.rigid_body_pos[:, feet_indices_tensor, :]
         feet_height = foot_pos[..., 2]
+        self.feet_height = feet_height
         # print(feet_height)
         target_height = self.cfg.params.handstand_feet_height_exp["target_height"]
         std = self.cfg.params.handstand_feet_height_exp["std"]
@@ -360,15 +383,40 @@ class Go2Skill(LeggedRobot):
         return torch.exp(-feet_height_error / (std ** 2))
         # return 0
 
+    # def _reward_base_height_exp(self):
+    #     base_height = self.root_states[:, 2].unsqueeze(1)
+    #     # print(feet_height)
+    #     target_height = self.cfg.params.base_height_exp["target_height"]
+    #     std = self.cfg.params.base_height_exp["std"]
+    #     base_height_error = torch.sum((base_height - target_height) ** 2, dim=1)
+    #     # print(torch.exp(-feet_height_error / (std**2)))
+    #     return torch.exp(-base_height_error / (std ** 2))
+    #     # return 0
     def _reward_base_height_exp(self):
+        # 取前两只脚的高度
+        front_feet_height = self.feet_height[:, :2]
+
+        # 计算阈值
+        threshold = 0.9 * self.cfg.params.handstand_feet_height_exp["target_height"]
+
+        # 条件：两只脚均高于阈值
+        condition = (front_feet_height > threshold).all(dim=1)
+
+        # 计算 base height
         base_height = self.root_states[:, 2].unsqueeze(1)
-        # print(feet_height)
+
+        # 目标高度与标准差
         target_height = self.cfg.params.base_height_exp["target_height"]
         std = self.cfg.params.base_height_exp["std"]
+
+        # 计算指数型奖励值（高斯核形式）
         base_height_error = torch.sum((base_height - target_height) ** 2, dim=1)
-        # print(torch.exp(-feet_height_error / (std**2)))
-        return torch.exp(-base_height_error / (std ** 2))
-        # return 0
+        reward_value = torch.exp(-base_height_error / (std ** 2))
+
+        # 若条件不满足，两脚高度不足 → 奖励设为 0
+        reward = torch.where(condition, reward_value, torch.zeros_like(reward_value))
+
+        return reward
 
     def _reward_handstand_feet_on_air(self):
         """
@@ -443,7 +491,7 @@ class Go2Skill(LeggedRobot):
         hipy_angles = self.dof_pos[:, hipy_indices_tensor]
 
         # 检查所有匹配关节的角度是否都 > -1（按环境维度求 and）
-        is_valid = (hipy_angles > -1.0).all(dim=1)
+        is_valid = (hipy_angles < 1.0).all(dim=1)
 
         # 返回 float 类型的奖励值（1.0 或 0.0）
         return is_valid.float()
@@ -576,3 +624,43 @@ class Go2Skill(LeggedRobot):
 
         return stance_diff
 
+    def _reward_base_height(self):
+        # 前脚高度
+        front_feet_height = self.feet_height[:, :2]  # 取前两只脚
+
+        # 阈值
+        threshold = 0.9 * self.cfg.params.handstand_feet_height_exp["target_height"]
+
+        # 判断是否满足条件（两只脚均高于阈值）
+        condition = (front_feet_height > threshold).all(dim=1)
+
+        # 计算基础高度误差
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
+        reward_value = torch.square(base_height - self.cfg.rewards.base_height_target)
+
+        # 若条件不满足，奖励为 0
+        reward = torch.where(condition, reward_value, torch.zeros_like(reward_value))
+
+        return reward
+
+    def _reward_no_move(self):
+        """
+        奖励机器人尽量保持不动，即线速度和角速度接近零。
+        当速度命令超过阈值时，奖励衰减（实际是惩罚移动）。
+        """
+        # 阈值，可根据你的 _resample_commands 中的小命令置0范围调整
+        zero_threshold = 0.2
+
+        # 线速度误差（与0的差）
+        lin_vel_error = torch.norm(self.commands[:, :2], dim=1)
+
+        # 角速度误差（yaw）
+        ang_vel_error = torch.abs(self.commands[:, 2])
+
+        # 总误差
+        total_error = lin_vel_error + ang_vel_error
+
+        # 奖励：总误差越小奖励越高
+        reward = torch.exp(- (total_error / zero_threshold) ** 2)
+
+        return reward

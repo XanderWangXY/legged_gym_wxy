@@ -55,8 +55,8 @@ class PolicyExporter(torch.nn.Module):
 #         return loaded_dict['infos']
 
 if __name__ == '__main__':
-    path = '/home/ehr/wxy/legged_gym_wxy/logs/go2_skill/Aug26_17-07-47_fs/'
-    model_name = 'model_37000.pt'
+    path = '/home/ehr/wxy/legged_gym_wxy/logs/go2_amp/Oct15_10-02-47_student_paper/'
+    model_name = 'model_33500.pt'
     loaded_dict = torch.load(path + model_name, map_location='cpu')
     actor_critic = ActorCritic(45, # env.num_obs,
                                45,  # env.num_previleged_obs,

@@ -81,7 +81,7 @@ class Go2AMPCfg( LeggedRobotCfg ):
         randomize_base_mass = True
         added_mass_range = [-1., 3.]
         randomize_com_offset = True
-        com_offset_range = [[-0.03, 0.06], [-0.02, 0.02], [-0.02, 0.04]]
+        com_offset_range = [[-0.02, 0.04], [-0.01, 0.01], [-0.03, 0.05]]
         randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         randomize_Kp_factor = True
@@ -109,8 +109,8 @@ class Go2AMPCfg( LeggedRobotCfg ):
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
         terminate_after_contacts_on = ["base", "Head"]
         self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter
-        restitution_mean = 0.5
-        restitution_offset_range = [-0.1, 0.1]
+        restitution_mean = 0.2
+        restitution_offset_range = [-0.2, 0.2]
         compliance = 0.5
 
     class params:  # 参数单独放在params类中
@@ -122,23 +122,58 @@ class Go2AMPCfg( LeggedRobotCfg ):
         soft_dof_pos_limit = 0.9
         base_height_target = 0.25
         class scales( LeggedRobotCfg.rewards.scales ):
+            # termination = 0.0
+            # tracking_lin_vel = 1.5 * 1. / (.005 * 6)
+            # tracking_ang_vel = 0.5 * 1. / (.005 * 6)
+            # lin_vel_z = 0.0
+            # ang_vel_xy = 0.0
+            # orientation = 0.0
+            # torques = 0.#-1e-4* 1. / (.005 * 6)
+            # dof_vel = 0.0
+            # dof_acc = 0.#-2.5e-7* 1. / (.005 * 6)
+            # dof_pos_limits = 0.#-10.0* 1. / (.005 * 6)
+            # base_height = 0.0
+            # feet_air_time =  0.#1.0* 1. / (.005 * 6)
+            # collision = 0.#-0.01* 1. / (.005 * 6)
+            # feet_stumble = 0.0
+            # action_rate = 0.#-0.01* 1. / (.005 * 6)
+            # stand_still = 0.0
+#PIE rew
+            # termination = 0.0
+            # tracking_lin_vel = 1.5 * 1. / (.005 * 6)
+            # tracking_ang_vel = 0.5 * 1. / (.005 * 6)
+            # lin_vel_z = -1.0* 1. / (.005 * 6)
+            # ang_vel_xy = -0.05* 1. / (.005 * 6)
+            # orientation = -1.0* 1. / (.005 * 6)
+            # torques = 0.  # -1e-4* 1. / (.005 * 6)
+            # dof_vel = 0.0
+            # dof_acc = -2.5e-7* 1. / (.005 * 6)
+            # dof_pos_limits = 0.  # -10.0* 1. / (.005 * 6)
+            # base_height = 0.0
+            # feet_air_time = 0.  # 1.0* 1. / (.005 * 6)
+            # collision = -10.* 1. / (.005 * 6)
+            # feet_stumble = 0.0
+            # action_rate = -0.01* 1. / (.005 * 6)
+            # stand_still = 0.0
+            # joint_power = -2e-5* 1. / (.005 * 6)
+            # smoothness = -0.01* 1. / (.005 * 6)
+# paper rew
             termination = 0.0
             tracking_lin_vel = 1.5 * 1. / (.005 * 6)
             tracking_ang_vel = 0.5 * 1. / (.005 * 6)
             lin_vel_z = 0.0
             ang_vel_xy = 0.0
             orientation = 0.0
-            torques = 0.#-1e-4* 1. / (.005 * 6)
+            torques = -1e-4* 1. / (.005 * 6)
             dof_vel = 0.0
-            dof_acc = 0.#-2.5e-7* 1. / (.005 * 6)
-            dof_pos_limits = 0.#-10.0* 1. / (.005 * 6)
+            dof_acc = -2.5e-7* 1. / (.005 * 6)
+            dof_pos_limits = 0.  # -10.0* 1. / (.005 * 6)
             base_height = 0.0
-            feet_air_time =  0.#1.0* 1. / (.005 * 6)
-            collision = 0.#-0.01* 1. / (.005 * 6)
+            feet_air_time = 0.  # 1.0* 1. / (.005 * 6)
+            collision = -0.1* 1. / (.005 * 6)
             feet_stumble = 0.0
-            action_rate = 0.#-0.01* 1. / (.005 * 6)
+            action_rate = -0.01* 1. / (.005 * 6)
             stand_still = 0.0
-            dof_pos_limits = 0.0
 
     class student:
         student = False
@@ -151,8 +186,8 @@ class Go2AMPCfg( LeggedRobotCfg ):
         resampling_time = 10. # time before command are changed[s]
         heading_command = False # if true: compute ang vel command from heading error
         class ranges:
-            lin_vel_x = [-1.0, 2.0] # min max [m/s]
-            lin_vel_y = [-0.5, 0.5]   # min max [m/s]
+            lin_vel_x = [-1.0, 3.5] # min max [m/s]
+            lin_vel_y = [-0.8, 0.8]   # min max [m/s]
             ang_vel_yaw = [-1.57, 1.57]    # min max [rad/s]
             heading = [-3.14, 3.14]
 
@@ -257,10 +292,11 @@ class Go2AMPCfgPPO( LeggedRobotCfgPPO ):
 class Go2AMPRoughCfgPPO( Go2AMPCfgPPO ):
     runner_class_name = 'AMPOnPolicyRunner'
     class policy(LeggedRobotCfgPPO.policy):
-        terrain_hidden_dims = [512, 256, 128]
+        terrain_hidden_dims = [256, 128]
         terrain_input_dims = 187
-        terrain_latent_dims = 36
-        encoder_latent_dims = 12
+        terrain_latent_dims = 16
+        encoder_latent_dims = 8
+        encoder_hidden_dims = [64, 32]
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         entropy_coef = 0.01
         student = False

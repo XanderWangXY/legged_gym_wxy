@@ -112,7 +112,7 @@ class Lite3SWCCfg( LeggedRobotCfg ):
         soft_dof_pos_limit = 1.  # percentage of urdf limits, values above this limit are penalized
         soft_dof_vel_limit = 1.
         soft_torque_limit = 1.
-        base_height_target = 1.
+        # base_height_target = -1.
         max_contact_force = 100.
         class scales( LeggedRobotCfg.rewards.scales ):
             # #handstand#

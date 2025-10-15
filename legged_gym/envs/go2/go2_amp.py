@@ -192,6 +192,7 @@ class Go2AMP(BaseTask):
         self.compute_observations()  # in some cases a simulation step might be required to refresh some obs (for example body positions)
         if self.num_privileged_obs is not None:
             self.compute_privileged_observations()
+        self.last_last_actions[:] = self.last_actions[:]
         self.last_actions[:] = self.actions[:]
         self.last_dof_vel[:] = self.dof_vel[:]
         self.last_root_vel[:] = self.root_states[:, 7:13]
@@ -253,6 +254,7 @@ class Go2AMP(BaseTask):
         self._resample_commands(env_ids)
 
         # reset buffers
+        self.last_last_actions[env_ids] = 0.
         self.last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
         self.feet_air_time[env_ids] = 0.
@@ -522,7 +524,7 @@ class Go2AMP(BaseTask):
         else:
             self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-        # fixed_commands = [1.5, 0.0, 0.0]
+        # fixed_commands = [2.8, 0.0, 0.0]
         # self.commands[env_ids, 0] = torch.tensor([fixed_commands[0]]).repeat(len(env_ids)).to(device=self.device)
         # self.commands[env_ids, 1] = torch.tensor([fixed_commands[1]]).repeat(len(env_ids)).to(device=self.device)
         # self.commands[env_ids, 2] = torch.tensor([fixed_commands[2]]).repeat(len(env_ids)).to(device=self.device)
@@ -761,6 +763,7 @@ class Go2AMP(BaseTask):
         self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
         self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
         self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
@@ -1313,6 +1316,13 @@ class Go2AMP(BaseTask):
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+
+    def _reward_joint_power(self):
+        return torch.sum((torch.abs(self.dof_vel)*torch.abs(self.torques)),dim=1)
+
+    def _reward_smoothness(self):
+        rew = torch.sum(torch.square(self.actions - 2 * self.last_actions + self.last_last_actions), dim=1)
+        return rew
 
 class Go2AMPRough(Go2AMP):
     def compute_privileged_observations(self):

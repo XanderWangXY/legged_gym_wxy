@@ -96,7 +96,7 @@ class AMPPPO:
             {'params': self.discriminator.amp_linear.parameters(),
              'weight_decay': 10e-2, 'name': 'amp_head'}]
         self.optimizer = optim.Adam(params, lr=learning_rate)
-        self.adaptation_optimizer = optim.Adam(self.actor_critic.parameters(), lr=learning_rate)
+        self.adaptation_optimizer = optim.Adam(self.actor_critic.adaptation_module.parameters(), lr=learning_rate)
         self.transition = RolloutStorage.Transition()
 
         # PPO parameters

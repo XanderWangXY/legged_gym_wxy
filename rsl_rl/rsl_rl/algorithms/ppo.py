@@ -96,6 +96,7 @@ class PPO:
                  device='cpu',
                  student = False,
                  dagger_beta=0.9,
+                 grad_penalty_coef_schedule=[0.000, 0.001, 1500, 3000],
                  ):
 
         self.device = device
@@ -108,8 +109,38 @@ class PPO:
         self.actor_critic = actor_critic
         self.actor_critic.to(self.device)
         self.storage = None # initialized later
-        self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=learning_rate)
-        self.adaptation_optimizer = optim.Adam(self.actor_critic.parameters(), lr=learning_rate)
+###########
+        # ppo_params = [
+        #     {"params": self.actor_critic.actor.parameters(), "lr": learning_rate},
+        #     {"params": self.actor_critic.critic.parameters(), "lr": learning_rate},
+        #     {"params": [self.actor_critic.std], "lr": learning_rate},
+        #     {"params": self.actor_critic.env_factor_encoder.parameters(), "lr": learning_rate * 0.2,
+        #      #"weight_decay": 1e-5
+        #      },
+        # ]
+        # if hasattr(self.actor_critic, "terrain_encoder") and self.actor_critic.terrain_encoder is not None:
+        #     ppo_params.append({"params": self.actor_critic.terrain_encoder.parameters(), "lr": learning_rate * 0.2,
+        #                        #"weight_decay": 1e-5
+        #                        })
+        #
+        # self.optimizer = torch.optim.Adam(ppo_params)
+###########
+        # self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=learning_rate)
+        # self.adaptation_optimizer = optim.Adam(self.actor_critic.parameters(), lr=learning_rate)
+###########
+        # PPO 只优化 actor、critic（以及 log_std）；不动 encoder/terrain/adapter
+        ppo_params = list(self.actor_critic.actor.parameters()) \
+                     + list(self.actor_critic.critic.parameters()) \
+                     + list(self.actor_critic.env_factor_encoder.parameters()) \
+                     + [self.actor_critic.std]  # 若 std 可学习
+        # 如果 terrain_encoder 存在，追加其参数
+        if hasattr(self.actor_critic, "terrain_encoder"):
+            ppo_params += list(self.actor_critic.terrain_encoder.parameters())
+        self.optimizer = optim.Adam(ppo_params, lr=learning_rate)
+
+        # 适配器单独优化
+        self.adaptation_optimizer = optim.Adam(self.actor_critic.adaptation_module.parameters(), lr=learning_rate)
+
         self.transition = RolloutStorage.Transition()
 
         # PPO parameters
@@ -138,6 +169,28 @@ class PPO:
                 self.depth_encoder_paras = depth_encoder_paras
                 self.student_actor_optimizer = optim.Adam(
                     [*self.student_actor.parameters(), *self.student_adaptation.parameters(), *self.depth_encoder.parameters()], lr=depth_encoder_paras["learning_rate"])
+        self.gradient_penalty_coef_schedule = grad_penalty_coef_schedule
+        self.counter = 0
+
+    def _calc_grad_penalty(self, priv_obs, obs_batch, actions_log_prob_batch):
+        # 同时计算对数概率之和对priv_obs和obs_batch的梯度
+        grads = torch.autograd.grad(
+            actions_log_prob_batch.sum(),  # 目标：动作对数概率总和
+            [priv_obs, obs_batch],  # 对两个原始输入求导
+            create_graph=True,  # 保留计算图用于二次微分
+            retain_graph=True  # 保留计算图避免释放
+        )
+
+        # 分别获取两个输入的梯度
+        grad_priv_obs, grad_obs_batch = grads
+
+        # 计算两个梯度的L2惩罚并求和
+        grad_penalty_priv = torch.sum(torch.square(grad_priv_obs), dim=-1).mean()
+        grad_penalty_obs = torch.sum(torch.square(grad_obs_batch), dim=-1).mean()
+
+        # 总梯度惩罚（可根据需要调整权重）
+        total_grad_penalty = grad_penalty_priv + grad_penalty_obs
+        return total_grad_penalty
 
     def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape, depth_image_shape=None):
         self.storage = RolloutStorage(num_envs, num_transitions_per_env, actor_obs_shape, privileged_obs_shape, obs_history_shape, action_shape, depth_image_shape, self.device)
@@ -189,6 +242,7 @@ class PPO:
         mean_surrogate_loss = 0
         mean_adaptation_loss = 0
         mean_depth_loss = 0
+        mean_grad_penalty_loss = 0
         if self.actor_critic.is_recurrent:
             generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
         elif self.if_depth:
@@ -200,13 +254,22 @@ class PPO:
              #,depth_image_batch,hidden_states_batch, depth_masks_batch,obs_recurrent_batch, priv_obs_recurrent_batch
              , hid_states_batch, masks_batch) in generator:
 
+                obs_est_batch = obs_batch.clone()
+                privileged_obs_est_batch = privileged_obs_batch.clone()
+                obs_est_batch.requires_grad_()
+                privileged_obs_est_batch.requires_grad_()
 
-                self.actor_critic.act(obs_batch, privileged_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                self.actor_critic.act(obs_est_batch, privileged_obs_est_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
                 actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
                 value_batch = self.actor_critic.evaluate(critic_obs_batch, privileged_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[1])
                 mu_batch = self.actor_critic.action_mean
                 sigma_batch = self.actor_critic.action_std
                 entropy_batch = self.actor_critic.entropy
+
+                # Calculate the gradient penalty loss
+                gradient_penalty_loss = self._calc_grad_penalty(privileged_obs_est_batch, obs_est_batch, actions_log_prob_batch)
+                gradient_stage = min(max((self.counter - self.gradient_penalty_coef_schedule[2]), 0) /self.gradient_penalty_coef_schedule[3], 1)
+                gradient_penalty_coef = gradient_stage * (self.gradient_penalty_coef_schedule[1] - self.gradient_penalty_coef_schedule[0]) + self.gradient_penalty_coef_schedule[0]
 
                 # KL
                 if self.desired_kl != None and self.schedule == 'adaptive':
@@ -241,7 +304,7 @@ class PPO:
                 else:
                     value_loss = (returns_batch - value_batch).pow(2).mean()
 
-                loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
+                loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean() #+ gradient_penalty_coef * gradient_penalty_loss
 
                 # Gradient step
                 self.optimizer.zero_grad()
@@ -251,6 +314,7 @@ class PPO:
 
                 mean_value_loss += value_loss.item()
                 mean_surrogate_loss += surrogate_loss.item()
+                mean_grad_penalty_loss += gradient_penalty_loss.item()
 
                 # Adaptation module gradient step
                 for epoch in range(self.num_adaptation_module_substeps):
@@ -295,9 +359,10 @@ class PPO:
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_adaptation_loss /= (num_updates * self.num_adaptation_module_substeps)
+        mean_grad_penalty_loss /= num_updates
         self.storage.clear()
-
-        return mean_value_loss, mean_surrogate_loss, mean_adaptation_loss, mean_depth_loss
+        self.update_counter()
+        return mean_value_loss, mean_surrogate_loss, mean_adaptation_loss, mean_depth_loss, mean_grad_penalty_loss
 
     def behavioral_cloning(self,
                            actions_student_buffer,
@@ -468,3 +533,6 @@ class PPO:
         actions_mean = self.student_actor(torch.cat((observations, depth_latent_student, latent), dim=-1))
         policy_info["latents"] = latent.detach().cpu().numpy()
         return actions_mean, latent
+
+    def update_counter(self):
+        self.counter += 1

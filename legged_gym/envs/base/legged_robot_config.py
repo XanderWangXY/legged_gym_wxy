@@ -119,6 +119,13 @@ class LeggedRobotCfg(BaseConfig):
         armature = 0.
         thickness = 0.01
 
+        hip_joint_name = "hip"
+        mirror_joint_names1 = ['FL_hip_joint', 'RL_hip_joint']
+        mirror_joint_names2 = ['FR_hip_joint', 'RR_hip_joint']
+
+        mirror_joint_names3 = ['FL_thigh_joint', 'FL_calf_joint', 'RL_thigh_joint', 'RL_calf_joint']
+        mirror_joint_names4 = ['FR_thigh_joint', 'FR_calf_joint', 'RR_thigh_joint', 'RR_calf_joint']
+
     class domain_rand:
         randomize_friction = True
         friction_range = [0.5, 1.25]
@@ -159,6 +166,9 @@ class LeggedRobotCfg(BaseConfig):
         soft_torque_limit = 1.
         base_height_target = 1.
         max_contact_force = 100. # forces above this value are penalized
+        command_threshold = 0.1
+        velocity_threshold = 0.5
+        stand_still_scale = 5.0
 
     class normalization:
         class obs_scales:
@@ -196,7 +206,7 @@ class LeggedRobotCfg(BaseConfig):
             ang_vel = 0.2
             gravity = 0.05
             height_measurements = 0.1
-            orientation = 0.5
+            orientation = 0.05
 
     # viewer camera:
     class viewer:

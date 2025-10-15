@@ -199,7 +199,7 @@ class OnPolicyRunner:
                 start = stop
                 self.alg.compute_returns(critic_obs,privileged_obs)
             
-            mean_value_loss, mean_surrogate_loss, mean_adaptation_loss, mean_depth_loss = self.alg.update()
+            mean_value_loss, mean_surrogate_loss, mean_adaptation_loss, mean_depth_loss, mean_grad_penalty_loss = self.alg.update()
             stop = time.time()
             learn_time = stop - start
             if self.log_dir is not None:
@@ -241,6 +241,7 @@ class OnPolicyRunner:
         self.writer.add_scalar('Loss/mean_adaptation_loss', locs['mean_adaptation_loss'], locs['it'])
         self.writer.add_scalar('Loss/mean_depth_loss', locs['mean_depth_loss'], locs['it'])
         self.writer.add_scalar('Loss/learning_rate', self.alg.learning_rate, locs['it'])
+        self.writer.add_scalar('Loss/mean_grad_penalty_loss', locs['mean_grad_penalty_loss'], locs['it'])
         self.writer.add_scalar('Policy/mean_noise_std', mean_std.item(), locs['it'])
         self.writer.add_scalar('Perf/total_fps', fps, locs['it'])
         self.writer.add_scalar('Perf/collection time', locs['collection_time'], locs['it'])

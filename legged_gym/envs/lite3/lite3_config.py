@@ -131,7 +131,7 @@ class Lite3RoughCfgPPO( LeggedRobotCfgPPO ):
         num_learning_epochs = 1
 
     class runner( LeggedRobotCfgPPO.runner ):
-        max_iterations = 15000  # number of policy updates
+        max_iterations = 20000  # number of policy updates
         run_name = ''
         experiment_name = 'rough_lite3'
         description = 'test'

@@ -98,12 +98,12 @@ class Go2FootStandCfg( LeggedRobotCfg ):
         foot_name = "foot"
         # shoulder_name = "shoulder"
         # penalize_contacts_on = ["THIGH", "shoulder", "SHANK"]
-        penalize_contacts_on = ["thigh", "calf"]
+        penalize_contacts_on = ["thigh", "calf", "hip"]
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
         terminate_after_contacts_on = ["base", "Head"]
         self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter
-        restitution_mean = 0.5
-        restitution_offset_range = [-0.1, 0.1]
+        restitution_mean = 0.2
+        restitution_offset_range = [-0.2, 0.2]
         compliance = 0.5
   
     class rewards( LeggedRobotCfg.rewards ):
@@ -111,35 +111,64 @@ class Go2FootStandCfg( LeggedRobotCfg ):
         tracking_sigma = 0.25  # tracking reward = exp(-error^2/sigma)
         soft_dof_pos_limit = 0.9  # percentage of urdf limits, values above this limit are penalized
         soft_dof_vel_limit = 1.
-        soft_torque_limit = 29.
-        base_height_target = 0.42
+        soft_torque_limit = 1.
+        base_height_target = 0.48
         max_contact_force = 100.
         class scales( LeggedRobotCfg.rewards.scales ):
+            # termination = -0.0
+            # tracking_lin_vel_skill = 3.  # 20.0
+            # tracking_ang_vel_skill = 1.5  # 6.66
+            # tracking_lin_vel = 0.0
+            # tracking_ang_vel = 0.
+            # lin_vel_z = -0.0
+            # ang_vel_xy = -0.0
+            # orientation = -0.0
+            # torques = -0.0002
+            # torque_limits = -1
+            # dof_vel = -0.
+            # dof_acc = -2.5e-7
+            # base_height = 0.#-0.5
+            # feet_air_time = 0.0
+            # collision = -2.
+            # feet_stumble = -0.0
+            # action_rate = -0.03
+            # stand_still = -0.
+            # handstand_feet_height_exp = 12.0
+            # handstand_feet_on_air = 1.0
+            # handstand_feet_air_time = 1.0
+            # handstand_orientation_l2 = -2.5
+            # hipy_angle_threshold = 0.5
+            # joint_mirror = -0.1
+            # # dof_pos_limits = -3
+            # #both_feet_air = -1.0
+
             termination = -0.0
-            tracking_lin_vel_skill = 3.  # 20.0
-            tracking_ang_vel_skill = 1.5  # 6.66
-            tracking_lin_vel = 0.0
-            tracking_ang_vel = 0.
+            tracking_lin_vel = 3.0
+            tracking_ang_vel = 1.5
             lin_vel_z = -0.0
             ang_vel_xy = -0.0
             orientation = -0.0
             torques = -0.0002
-            torque_limits = -1
             dof_vel = -0.
             dof_acc = -2.5e-7
-            base_height = 0.#-0.5
+            # base_height = -0.
             feet_air_time = 0.0
-            collision = -2.
+            collision = -1.
             feet_stumble = -0.0
-            action_rate = -0.03
+            action_rate = -0.01
             stand_still = -0.
-            handstand_feet_height_exp = 12.0
+            handstand_feet_height_exp = 10.0
             handstand_feet_on_air = 1.0
             handstand_feet_air_time = 1.0
-            handstand_orientation_l2 = -2.5
-            hipy_angle_threshold = 0.5
-            # dof_pos_limits = -3
-            #both_feet_air = -1.0
+            handstand_orientation_l2 = -1.0
+
+            hipy_angle_threshold = 1.0
+            joint_mirror = -0.05
+            # smoothness = -0.0015
+            dof_pos_limits = -5
+            # base_height = 1.
+            base_height_exp = 1.
+            no_move = 1.0
 
     class commands:
         curriculum = False
@@ -155,11 +184,11 @@ class Go2FootStandCfg( LeggedRobotCfg ):
 
     class params:  # 参数单独放在params类中
         handstand_feet_height_exp = {
-            "target_height": 0.78,
+            "target_height": 0.82,
             "std": 0.5
         }
         handstand_orientation_l2 = {
-            "target_gravity": [-0.999, 0., -0.035]
+            "target_gravity": [-0.9962, 0., -0.0872]
         }
         handstand_feet_air_time = {
             "threshold": 5.0
@@ -177,11 +206,15 @@ class Go2FootStandCfg( LeggedRobotCfg ):
         epsilon_h = {
             "epsilon_h": 0.08
         }
+        base_height_exp = {
+            "target_height": 0.48,
+            "std": 0.5
+        }
 
 
     class student:
         student = False
-        num_envs = 192
+        num_envs = 1024
 
     class skill_commands:
         num_skill_commands = 3
@@ -189,14 +222,20 @@ class Go2FootStandCfg( LeggedRobotCfg ):
 class Go2HandStandCfg( Go2FootStandCfg ):
     class rewards(Go2FootStandCfg.rewards):
         base_height_target = 0.48
+        soft_dof_pos_limit = 0.9
         class scales( Go2FootStandCfg.rewards.scales ):
-            handstand_feet_height_exp = 12.0
-            action_rate = -0.03
+            # handstand_feet_height_exp = 12.0
+            # action_rate = -0.03
             hipy_angle_threshold = 0.
+            # dof_pos_limits = -3
             # handstand_orientation_l2 = -4
             # collision = -10.
-            # base_height_exp = 3.
-            # base_height = -2
+            base_height_exp = 0.
+            base_height = -0
+            no_move = 0.
+
+            dof_pos_limits = -5
+            smoothness = -0.0015
 
     class params(Go2FootStandCfg.params):
         handstand_feet_height_exp = {
@@ -208,7 +247,7 @@ class Go2HandStandCfg( Go2FootStandCfg ):
             "std": 0.5
         }
         handstand_orientation_l2 = {
-            "target_gravity": [0.999, 0., -0.035]
+            "target_gravity": [0.9849, 0., -0.1726]
         }
         feet_name_reward = {
             "feet_name": "R.*_foot"
@@ -225,11 +264,11 @@ class Go2SkillCfgPPO( LeggedRobotCfgPPO ):
         terrain_hidden_dims = None
         terrain_input_dims = 0
         terrain_latent_dims = 0
-        encoder_latent_dims = 36
+        encoder_latent_dims = 18
 
     class student:
         num_mini_batches = 1  # mini batch size = num_envs*nsteps / nminibatches
-        num_steps_per_env = 120
+        num_steps_per_env = 48
         num_learning_epochs = 1
 
     class runner( LeggedRobotCfgPPO.runner ):

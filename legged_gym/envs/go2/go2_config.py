@@ -96,15 +96,17 @@ class Go2RoughCfg( LeggedRobotCfg ):
         file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/go2/urdf/go2.urdf'
         name = "go2"
         foot_name = "foot"
+        hip_joint_name = "hip"
         # shoulder_name = "shoulder"
         # penalize_contacts_on = ["THIGH", "shoulder", "SHANK"]
         penalize_contacts_on = ["thigh", "calf"]
         # terminate_after_contacts_on = ["TORSO", "shoulder"]
         terminate_after_contacts_on = ["base", "Head"]
         self_collisions = 1  # 1 to disable, 0 to enable...bitwise filter
-        restitution_mean = 0.5
-        restitution_offset_range = [-0.1, 0.1]
+        restitution_mean = 0.2
+        restitution_offset_range = [-0.2, 0.2]
         compliance = 0.5
+        # armature = 0.001
         # compliance_offset_range = [-0.1, 0.1]
   
     class rewards( LeggedRobotCfg.rewards ):
@@ -114,10 +116,30 @@ class Go2RoughCfg( LeggedRobotCfg ):
             torques = -0.0002
             dof_pos_limits = -10.0
             stand_still = -0.0#5
+            joint_pos_penalty = -0.5
+            smoothness = -0.0015
+            # smoothness = -0.001
+            #PIE_rew
+            # termination = -0.0
+            # tracking_lin_vel = 1.5
+            # tracking_ang_vel = 0.5
+            # lin_vel_z = -1.0
+            # ang_vel_xy = -0.05
+            # orientation = -1.
+            # torques = -0.0000
+            # dof_vel = -0.
+            # dof_acc = -2.5e-7
+            # base_height = -0.
+            # feet_air_time = 0.0
+            # collision = -10.
+            # feet_stumble = -0.0
+            # action_rate = -0.01
+            # joint_power = -2.0e-5
+            # smoothness = -0.01
 
     class student:
         student = False
-        num_envs = 192
+        num_envs = 1024
 
 class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
     class algorithm( LeggedRobotCfgPPO.algorithm ):
@@ -137,6 +159,12 @@ class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
         experiment_name = 'rough_go2'
         description = 'test'
         num_steps_per_env = 24
+
+    # class policy(LeggedRobotCfgPPO.policy):
+    #     terrain_hidden_dims = [512, 256, 128]
+    #     terrain_input_dims = 132
+    #     terrain_latent_dims = 36
+    #     encoder_latent_dims = 12
 
 class Go2RoughCfgDVAEPPO( LeggedRobotCfgPPO ):
     runner_class_name = 'OnPolicyRunner_DVAE'
@@ -159,7 +187,7 @@ class Go2RoughCfgDVAEPPO( LeggedRobotCfgPPO ):
 
     class student:
         num_mini_batches = 1  # mini batch size = num_envs*nsteps / nminibatches
-        num_steps_per_env = 120
+        num_steps_per_env = 48
         num_learning_epochs = 1
 
     class runner( LeggedRobotCfgPPO.runner ):
