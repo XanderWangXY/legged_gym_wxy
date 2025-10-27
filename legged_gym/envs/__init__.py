@@ -67,7 +67,7 @@ from .go2.go2_amp_config import Go2AMPCfg, Go2AMPCfgPPO, Go2AMPRoughCfg, Go2AMPR
 from .go2.go2_skill import Go2Skill
 from .go2.go2_handstand_config import Go2FootStandCfg,Go2HandStandCfg,Go2SkillCfgPPO
 from .go2.go2 import Go2
-from .go2.go2_config import Go2RoughCfg, Go2RoughCfgPPO, Go2RoughCfgDVAEPPO
+from .go2.go2_config import Go2RoughCfg, Go2RoughCfgPPO, Go2RoughDWAQCfg, Go2RoughCfgDVAEPPO, Go2RoughCfgDWAQPPO
 
 import os
 
@@ -101,3 +101,4 @@ task_registry.register( "go2handstand", Go2Skill, Go2HandStandCfg(), Go2SkillCfg
 task_registry.register( "go2footstand", Go2Skill, Go2FootStandCfg(), Go2SkillCfgPPO() )
 task_registry.register( "go2", Go2, Go2RoughCfg(), Go2RoughCfgPPO() )
 task_registry.register( "go2dvae", Go2, Go2RoughCfg(), Go2RoughCfgDVAEPPO() )
+task_registry.register( "go2dwaq", Go2, Go2RoughDWAQCfg(), Go2RoughCfgDWAQPPO() )

@@ -138,25 +138,6 @@ class Go2AMPCfg( LeggedRobotCfg ):
             # feet_stumble = 0.0
             # action_rate = 0.#-0.01* 1. / (.005 * 6)
             # stand_still = 0.0
-#PIE rew
-            # termination = 0.0
-            # tracking_lin_vel = 1.5 * 1. / (.005 * 6)
-            # tracking_ang_vel = 0.5 * 1. / (.005 * 6)
-            # lin_vel_z = -1.0* 1. / (.005 * 6)
-            # ang_vel_xy = -0.05* 1. / (.005 * 6)
-            # orientation = -1.0* 1. / (.005 * 6)
-            # torques = 0.  # -1e-4* 1. / (.005 * 6)
-            # dof_vel = 0.0
-            # dof_acc = -2.5e-7* 1. / (.005 * 6)
-            # dof_pos_limits = 0.  # -10.0* 1. / (.005 * 6)
-            # base_height = 0.0
-            # feet_air_time = 0.  # 1.0* 1. / (.005 * 6)
-            # collision = -10.* 1. / (.005 * 6)
-            # feet_stumble = 0.0
-            # action_rate = -0.01* 1. / (.005 * 6)
-            # stand_still = 0.0
-            # joint_power = -2e-5* 1. / (.005 * 6)
-            # smoothness = -0.01* 1. / (.005 * 6)
 # paper rew
             termination = 0.0
             tracking_lin_vel = 1.5 * 1. / (.005 * 6)
@@ -272,7 +253,7 @@ class Go2AMPCfgPPO( LeggedRobotCfgPPO ):
         num_learning_epochs = 1
 
     class runner( LeggedRobotCfgPPO.runner ):
-        max_iterations = 30000  # number of policy updatesf
+        max_iterations = 10000  # number of policy updatesf
         run_name = ''
         description = 'test'
         num_steps_per_env = 24

@@ -117,7 +117,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
             dof_pos_limits = -10.0
             stand_still = -0.0#5
             joint_pos_penalty = -0.5
-            smoothness = -0.0015
+            smoothness = -0.002
             # smoothness = -0.001
             #PIE_rew
             # termination = -0.0
@@ -139,9 +139,15 @@ class Go2RoughCfg( LeggedRobotCfg ):
 
     class student:
         student = False
-        num_envs = 1024
+        num_envs = 256
 
 class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
+    class policy(LeggedRobotCfgPPO.policy):
+        terrain_hidden_dims = None
+        terrain_input_dims = 0
+        terrain_latent_dims = 0
+        encoder_latent_dims = 36
+
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         entropy_coef = 0.01
         student = False
@@ -196,5 +202,46 @@ class Go2RoughCfgDVAEPPO( LeggedRobotCfgPPO ):
         max_iterations = 50000  # number of policy updates
         run_name = ''
         experiment_name = 'go2_DVAE'
+        description = 'test'
+        num_steps_per_env = 24
+
+class Go2RoughDWAQCfg( Go2RoughCfg ):
+    class env(Go2RoughCfg.env):
+        num_observation_history = 10
+        task_name = 'go2dwaq'
+    class rewards(Go2RoughCfg.rewards):
+        class scales(Go2RoughCfg.rewards.scales):
+            smoothness = -0.0
+
+class Go2RoughCfgDWAQPPO( LeggedRobotCfgPPO ):
+    runner_class_name = 'OnPolicyRunner_DWAQ'
+    class policy( LeggedRobotCfgPPO.policy ):
+        init_noise_std = 1.0
+        actor_hidden_dims = [512, 256, 128]
+        critic_hidden_dims = [512, 256, 128]
+        activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
+        vh_encoder_dims=[256, 128]
+        vh_decoder_dims=[128, 256]
+        oh_out_dim=32
+        vh_in_dim = 187 + 3
+        critic_in_dim = oh_out_dim+36+3+1+4+4+45
+
+    class algorithm( LeggedRobotCfgPPO.algorithm ):
+        entropy_coef = 0.01
+        student = False
+        # dagger_beta = 1.0
+        num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
+
+    class student:
+        num_mini_batches = 1  # mini batch size = num_envs*nsteps / nminibatches
+        num_steps_per_env = 48
+        num_learning_epochs = 1
+
+    class runner( LeggedRobotCfgPPO.runner ):
+        policy_class_name = 'ActorCritic_DWAQ'
+        algorithm_class_name = 'PPO_DWAQ'
+        max_iterations = 20000  # number of policy updates
+        run_name = ''
+        experiment_name = 'go2_DWAQ'
         description = 'test'
         num_steps_per_env = 24
